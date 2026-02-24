@@ -26,11 +26,6 @@ export default function UserMenuOverlay({ visible, onClose, onNavigate }) {
     const { location, loading: locationLoading } = useContext(LocationContext);
     const [balance, setBalance] = useState(user?.balance ?? 0);
     const [roleModalVisible, setRoleModalVisible] = useState(false);
-    const [expandedSections, setExpandedSections] = useState({
-        bookings: false,
-        explore: false,
-        more: true,
-    });
 
     useEffect(() => {
         refreshUser && refreshUser();
@@ -50,7 +45,7 @@ export default function UserMenuOverlay({ visible, onClose, onNavigate }) {
 
     const profileImage =
         user?.profilePicture || user?.profile
-            ? `${BASE_URL}/Uploads/${user?.profilePicture || user?.profile}`
+            ? `${BASE_URL}/api/image/download/${user?.profilePicture || user?.profile}`
             : null;
 
     const getLocationText = () => {
@@ -60,13 +55,6 @@ export default function UserMenuOverlay({ visible, onClose, onNavigate }) {
         }
         if (location?.error) return "Location unavailable";
         return "Select location";
-    };
-
-    const toggleSection = (section) => {
-        setExpandedSections(prev => ({
-            ...prev,
-            [section]: !prev[section]
-        }));
     };
 
     if (!visible) return null;
@@ -94,7 +82,10 @@ export default function UserMenuOverlay({ visible, onClose, onNavigate }) {
 
                     {/* Profile Section */}
                     <View style={styles.profileSection}>
-                        <TouchableOpacity
+                        <View style={{
+                            width: 110, height: 100, backgroundColor: "#fff", borderRadius: 15, shadowOpacity: 0.1, shadowRadius: 10, elevation: 10,marginBottom:10 }}>
+                                <Image style={{ width: 80, height: 80, marginBottom: 0, marginLeft: 14, marginTop: 8 }} source={require('../../assets/images/logo.png')}></Image></View>
+                        {/* <TouchableOpacity
                             style={styles.avatarContainer}
                             onPress={() => {
                                 onClose();
@@ -118,9 +109,10 @@ export default function UserMenuOverlay({ visible, onClose, onNavigate }) {
                             <View style={styles.editBadge}>
                                 <Ionicons name="pencil" size={12} color="#fff" />
                             </View>
-                        </TouchableOpacity>
+                        </TouchableOpacity> */}
 
                         <View style={styles.userInfoContainer}>
+
                             <Text style={styles.userName}>{userName}</Text>
                             {user?.email && (
                                 <Text style={styles.userEmail}>{user.email}</Text>
@@ -129,7 +121,7 @@ export default function UserMenuOverlay({ visible, onClose, onNavigate }) {
 
                         {/* Location & Balance Row */}
                         <View style={styles.infoRow}>
-                            <TouchableOpacity
+                            {/* <TouchableOpacity
                                 style={styles.locationPill}
                                 onPress={() => {
                                     onClose();
@@ -141,7 +133,7 @@ export default function UserMenuOverlay({ visible, onClose, onNavigate }) {
                                     {getLocationText()}
                                 </Text>
                                 <Ionicons name="chevron-down" size={14} color="#fff" />
-                            </TouchableOpacity>
+                            </TouchableOpacity> */}
 
                             <View style={styles.balancePill}>
                                 <MaterialCommunityIcons name="wallet" size={14} color="#FFD700" />
@@ -153,7 +145,7 @@ export default function UserMenuOverlay({ visible, onClose, onNavigate }) {
                     </View>
                 </LinearGradient>
 
-                {/* Menu Items */}
+                {/* Menu Items - Simple List No Expand */}
                 <ScrollView
                     style={styles.menuScroll}
                     showsVerticalScrollIndicator={false}
@@ -163,7 +155,7 @@ export default function UserMenuOverlay({ visible, onClose, onNavigate }) {
                     <View style={styles.menuSection}>
                         <Text style={styles.sectionHeader}>ACCOUNT</Text>
                         <MenuItem
-                            icon="person-outline"
+                            imageSource={require('../../assets/icone/ic_traveler.webp')}
                             label="Edit Profile"
                             badge="New"
                             onPress={() => {
@@ -172,7 +164,7 @@ export default function UserMenuOverlay({ visible, onClose, onNavigate }) {
                             }}
                         />
                         <MenuItem
-                            icon="wallet-outline"
+                            imageSource={require('../../assets/icone/ic_credit_card.webp')}
                             label="Wallet Balance"
                             value={`₹${balance.toLocaleString()}`}
                             onPress={() => {
@@ -181,7 +173,7 @@ export default function UserMenuOverlay({ visible, onClose, onNavigate }) {
                             }}
                         />
                         <MenuItem
-                            icon="receipt-outline"
+                            imageSource={require('../../assets/icone/ic_baseline_history_60.webp')}
                             label="Transaction History"
                             onPress={() => {
                                 onClose();
@@ -190,166 +182,105 @@ export default function UserMenuOverlay({ visible, onClose, onNavigate }) {
                         />
                     </View>
 
-                    {/* Bookings Section */}
+                    {/* Bookings Section - Simple List */}
                     <View style={styles.menuSection}>
-                        <TouchableOpacity
-                            style={styles.sectionHeader}
-                            onPress={() => toggleSection('bookings')}
-                        >
-                            <Text style={styles.sectionHeaderText}>BOOKINGS</Text>
-                            <Ionicons
-                                name={expandedSections.bookings ? "chevron-up" : "chevron-down"}
-                                size={16}
-                                color="#64748b"
-                            />
-                        </TouchableOpacity>
-
-                        {expandedSections.bookings && (
-                            <View style={styles.sectionContent}>
-                                <MenuItem
-                                    icon="calendar-outline"
-                                    label="My Bookings"
-                                    onPress={() => {
-                                        onClose();
-                                        onNavigate("MyBookings");
-                                    }}
-                                />
-                                <MenuItem
-                                    icon="time-outline"
-                                    label="Upcoming"
-                                    onPress={() => {
-                                        onClose();
-                                        onNavigate("UpcomingBookings");
-                                    }}
-                                />
-                                <MenuItem
-                                    icon="checkmark-done-outline"
-                                    label="Completed"
-                                    onPress={() => {
-                                        onClose();
-                                        onNavigate("CompletedBookings");
-                                    }}
-                                />
-                            </View>
-                        )}
+                        <Text style={styles.sectionHeader}>BOOKINGS</Text>
+                        <MenuItem
+                            imageSource={require('../../assets/icone/ic_booking.webp')}
+                            label="My Bookings"
+                            onPress={() => {
+                                onClose();
+                                onNavigate("MyBookings");
+                            }}
+                        />
                     </View>
 
-                    {/* Explore Section */}
+                    {/* Explore Section - Simple List */}
                     <View style={styles.menuSection}>
-                        <TouchableOpacity
-                            style={styles.sectionHeader}
-                            onPress={() => toggleSection('explore')}
-                        >
-                            <Text style={styles.sectionHeaderText}>EXPLORE</Text>
-                            <Ionicons
-                                name={expandedSections.explore ? "chevron-up" : "chevron-down"}
-                                size={16}
-                                color="#64748b"
-                            />
-                        </TouchableOpacity>
-
-                        {expandedSections.explore && (
-                            <View style={styles.sectionContent}>
-                                <MenuItem
-                                    icon="map-outline"
-                                    label="Explore Places"
-                                    onPress={() => {
-                                        onClose();
-                                        onNavigate("ExplorePlaces");
-                                    }}
-                                />
-                                <MenuItem
-                                    icon="people-outline"
-                                    label="Find Tour Guides"
-                                    onPress={() => {
-                                        onClose();
-                                        onNavigate("FindTourGuides");
-                                    }}
-                                />
-                                <MenuItem
-                                    icon="camera-outline"
-                                    label="Find Photographers"
-                                    onPress={() => {
-                                        onClose();
-                                        onNavigate("FindPhotographers");
-                                    }}
-                                />
-                                <MenuItem
-                                    icon="heart-outline"
-                                    label="Wishlist"
-                                    onPress={() => {
-                                        onClose();
-                                        onNavigate("Wishlist");
-                                    }}
-                                />
-                            </View>
-                        )}
+                        <Text style={styles.sectionHeader}>EXPLORE</Text>
+                        <MenuItem
+                            imageSource={require('../../assets/icone/ic_destination_64.webp')}
+                            label="Explore Places"
+                            onPress={() => {
+                                onClose();
+                                onNavigate("ExplorePlaces");
+                            }}
+                        />
+                        <MenuItem
+                            imageSource={require('../../assets/icone/ic_tourism_guide_64.webp')}
+                            label="Find Tour Guides"
+                            onPress={() => {
+                                onClose();
+                                onNavigate("FindTourGuides");
+                            }}
+                        />
+                        <MenuItem
+                            imageSource={require('../../assets/icone/ic_photographer_64.webp')}
+                            label="Find Photographers"
+                            onPress={() => {
+                                onClose();
+                                onNavigate("FindPhotographers");
+                            }}
+                        />
+                        <MenuItem
+                            imageSource={require('../../assets/icone/ic_favorite.webp')}
+                            label="Wishlist"
+                            onPress={() => {
+                                onClose();
+                                onNavigate("Wishlist");
+                            }}
+                        />
                     </View>
 
-                    {/* More Section */}
+                    {/* More Section - Simple List */}
                     <View style={styles.menuSection}>
-                        <TouchableOpacity
-                            style={styles.sectionHeader}
-                            onPress={() => toggleSection('more')}
-                        >
-                            <Text style={styles.sectionHeaderText}>MORE</Text>
-                            <Ionicons
-                                name={expandedSections.more ? "chevron-up" : "chevron-down"}
-                                size={16}
-                                color="#64748b"
-                            />
-                        </TouchableOpacity>
-
-                        {expandedSections.more && (
-                            <View style={styles.sectionContent}>
-                                <MenuItem
-                                    icon="briefcase-outline"
-                                    label="Work with us"
-                                    badge="New"
-                                    onPress={() => setRoleModalVisible(true)}
-                                />
-                                <MenuItem
-                                    icon="information-circle-outline"
-                                    label="About us"
-                                    onPress={() => {
-                                        onClose();
-                                        onNavigate("AboutUs");
-                                    }}
-                                />
-                                <MenuItem
-                                    icon="call-outline"
-                                    label="Contact us"
-                                    onPress={() => {
-                                        onClose();
-                                        onNavigate("ContactUs");
-                                    }}
-                                />
-                                <MenuItem
-                                    icon="shield-checkmark-outline"
-                                    label="Privacy Policy"
-                                    onPress={() => {
-                                        onClose();
-                                        onNavigate("PrivacyPolicy");
-                                    }}
-                                />
-                                <MenuItem
-                                    icon="document-text-outline"
-                                    label="Terms & Conditions"
-                                    onPress={() => {
-                                        onClose();
-                                        onNavigate("TermsConditions");
-                                    }}
-                                />
-                                <MenuItem
-                                    icon="help-circle-outline"
-                                    label="Help & Support"
-                                    onPress={() => {
-                                        onClose();
-                                        onNavigate("HelpSupport");
-                                    }}
-                                />
-                            </View>
-                        )}
+                        <Text style={styles.sectionHeader}>MORE</Text>
+                        <MenuItem
+                            imageSource={require('../../assets/icone/ic_team_64.webp')}
+                            label="Work with us"
+                            badge="New"
+                            onPress={() => setRoleModalVisible(true)}
+                        />
+                        <MenuItem
+                            imageSource={require('../../assets/icone/ic_users.webp')}
+                            label="About us"
+                            onPress={() => {
+                                onClose();
+                                onNavigate("AboutUs");
+                            }}
+                        />
+                        <MenuItem
+                            imageSource={require('../../assets/icone/ic_phone_call.webp')}
+                            label="Contact us"
+                            onPress={() => {
+                                onClose();
+                                onNavigate("ContactUs");
+                            }}
+                        />
+                        <MenuItem
+                            imageSource={require('../../assets/icone/ic_privacy_policy_64.webp')}
+                            label="Privacy Policy"
+                            onPress={() => {
+                                onClose();
+                                onNavigate("PrivacyPolicy");
+                            }}
+                        />
+                        <MenuItem
+                            imageSource={require('../../assets/icone/ic_traveler.webp')}
+                            label="Terms & Conditions"
+                            onPress={() => {
+                                onClose();
+                                onNavigate("TermsConditions");
+                            }}
+                        />
+                        <MenuItem
+                            imageSource={require('../../assets/icone/ic_help.webp')}
+                            label="Help & Support"
+                            onPress={() => {
+                                onClose();
+                                onNavigate("HelpSupport");
+                            }}
+                        />
                     </View>
 
                     {/* Logout Button */}
@@ -400,7 +331,10 @@ export default function UserMenuOverlay({ visible, onClose, onNavigate }) {
                                 style={styles.modalOptionGradient}
                             >
                                 <View style={[styles.modalIcon, { backgroundColor: '#50869a' }]}>
-                                    <Ionicons name="people" size={24} color="#fff" />
+                                    <Image
+                                        source={require('../../assets/images/ic_guider_home.webp')}
+                                        style={styles.modalIconImage}
+                                    />
                                 </View>
                                 <View style={styles.modalOptionContent}>
                                     <Text style={styles.modalOptionTitle}>Tour Guide</Text>
@@ -425,7 +359,10 @@ export default function UserMenuOverlay({ visible, onClose, onNavigate }) {
                                 style={styles.modalOptionGradient}
                             >
                                 <View style={[styles.modalIcon, { backgroundColor: '#e76f51' }]}>
-                                    <Ionicons name="camera" size={24} color="#fff" />
+                                    <Image
+                                        source={require('../../assets/images/ic_photographers_home.webp')}
+                                        style={styles.modalIconImage}
+                                    />
                                 </View>
                                 <View style={styles.modalOptionContent}>
                                     <Text style={styles.modalOptionTitle}>Photographer</Text>
@@ -450,11 +387,19 @@ export default function UserMenuOverlay({ visible, onClose, onNavigate }) {
     );
 }
 
-function MenuItem({ icon, label, onPress, color = "#1e293b", badge, value }) {
+// 🟢 FIXED MenuItem component - REMOVED TINTCOLOR
+function MenuItem({ imageSource, label, onPress, color = "#1e293b", badge, value }) {
     return (
         <TouchableOpacity style={styles.menuItem} onPress={onPress}>
             <View style={styles.menuItemLeft}>
-                <Ionicons name={icon} size={20} color={color} />
+                {imageSource ? (
+                    <Image
+                        source={imageSource}
+                        style={styles.menuItemImage} // 👈 REMOVED tintColor
+                    />
+                ) : (
+                    <Ionicons name="help-outline" size={20} color={color} />
+                )}
                 <Text style={[styles.menuItemText, { color }]}>{label}</Text>
             </View>
             <View style={styles.menuItemRight}>
@@ -490,16 +435,16 @@ const styles = StyleSheet.create({
     menuContainer: {
         position: "absolute",
         top: 0,
-        left: 0,  // LEFT EDGE SE ATTACHED
+        left: 0,
         width: width * 0.85,
         maxWidth: 280,
         backgroundColor: "#fff",
         height: "100%",
-        borderTopRightRadius: 24,  // Right side rounded (क्योंकि left edge attached है)
+        borderTopRightRadius: 24,
         borderBottomRightRadius: 24,
         overflow: "hidden",
         shadowColor: "#000",
-        shadowOffset: { width: 2, height: 0 },  // Right side shadow
+        shadowOffset: { width: 2, height: 0 },
         shadowOpacity: 0.1,
         shadowRadius: 10,
         elevation: 10,
@@ -508,11 +453,14 @@ const styles = StyleSheet.create({
         paddingTop: STATUSBAR_HEIGHT + 20,
         paddingBottom: 20,
         paddingHorizontal: 16,
+        borderBottomLeftRadius:40,
+        borderBottomRightRadius:30,
+        height:250
     },
     closeBtn: {
         position: "absolute",
         top: STATUSBAR_HEIGHT + 12,
-        right: 16,  // RIGHT SIDE (क्योंकि menu left में है)
+        right: 16,
         width: 32,
         height: 32,
         borderRadius: 16,
@@ -623,21 +571,12 @@ const styles = StyleSheet.create({
         marginBottom: 16,
     },
     sectionHeader: {
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        paddingHorizontal: 20,
-        paddingVertical: 10,
-    },
-    sectionHeaderText: {
         fontSize: 12,
         fontWeight: "700",
         color: "#64748b",
         letterSpacing: 0.5,
-    },
-    sectionContent: {
-        backgroundColor: "#fff",
-        paddingVertical: 4,
+        paddingHorizontal: 20,
+        paddingVertical: 10,
     },
     menuItem: {
         flexDirection: "row",
@@ -653,8 +592,15 @@ const styles = StyleSheet.create({
         flexDirection: "row",
         alignItems: "center",
     },
+    menuItemImage: {
+        width: 22,
+        height: 22,
+        resizeMode: "contain",
+        marginRight: 8,
+        // 👈 NO tintColor here
+    },
     menuItemText: {
-        marginLeft: 12,
+        marginLeft: 4,
         fontSize: 14,
         fontWeight: "500",
     },
@@ -706,7 +652,6 @@ const styles = StyleSheet.create({
         color: "#94a3b8",
         marginBottom: 20,
     },
-    // Modal Styles
     modalOverlay: {
         flex: 1,
         justifyContent: "center",
@@ -758,6 +703,12 @@ const styles = StyleSheet.create({
         justifyContent: "center",
         alignItems: "center",
         marginRight: 12,
+    },
+    modalIconImage: {
+        width: 30,
+        height: 30,
+        resizeMode: "contain",
+        // 👈 NO tintColor here - original color will show
     },
     modalOptionContent: {
         flex: 1,

@@ -11,17 +11,80 @@ import {
   Dimensions,
   RefreshControl,
   ActivityIndicator,
+  SafeAreaView,
 } from "react-native";
 import { MaterialCommunityIcons as Icon } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import api from "../api/apiClient";
 import { API } from "../api/endpoints";
 import AdminMenuOverlay from "../components/AdminMenuOverlay";
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = (width - 48) / 2;
+const BASE_URL = "https://localguider.sinfode.com";
 
-// Stat Card Component
-const StatCard = ({ title, value, icon, color, onPress, subText, loading, isCurrency = false }) => {
+// 🔥 Get image URL from filename
+const getImageUrl = (filename) => {
+  if (!filename) return null;
+  if (filename.startsWith('http')) return filename;
+  
+  let imageName = filename;
+  if (filename.includes('/')) {
+    imageName = filename.split('/').pop();
+  }
+  if (filename.includes('\\')) {
+    imageName = filename.split('\\').pop();
+  }
+  
+  return `${BASE_URL}/api/image/download/${imageName}`;
+};
+
+// 🔥 Image Component for Places
+const PlaceImage = ({ imagePath, style }) => {
+  const [imageUrl, setImageUrl] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    if (!imagePath) {
+      setError(true);
+      setLoading(false);
+      return;
+    }
+    
+    const url = getImageUrl(imagePath);
+    setImageUrl(url);
+    setLoading(false);
+  }, [imagePath]);
+
+  if (loading) {
+    return (
+      <View style={[style, styles.placeImagePlaceholder]}>
+        <ActivityIndicator size="small" color="#2c5a73" />
+      </View>
+    );
+  }
+
+  if (error || !imageUrl) {
+    return (
+      <View style={[style, styles.placeImagePlaceholder]}>
+        <Icon name="image-off" size={30} color="#2c5a73" />
+      </View>
+    );
+  }
+
+  return (
+    <Image
+      source={{ uri: imageUrl }}
+      style={style}
+      onError={() => setError(true)}
+      resizeMode="cover"
+    />
+  );
+};
+
+// Stat Card Component with Gradient
+const StatCard = ({ title, value, icon, onPress, subText, loading, isCurrency = false }) => {
   let displayValue = value;
   
   if (isCurrency && typeof value === 'number') {
@@ -32,44 +95,44 @@ const StatCard = ({ title, value, icon, color, onPress, subText, loading, isCurr
   
   return (
     <TouchableOpacity
-      style={[styles.statCard, { backgroundColor: color }]}
       onPress={onPress}
       activeOpacity={0.85}
       disabled={loading}
+      style={styles.cardWrapper}
     >
-      <View style={styles.cardHeader}>
-        <View style={[styles.iconContainer, { backgroundColor: `${color}40` }]}>
-          <Icon name={icon} size={28} color="#fff" />
+      <LinearGradient
+        colors={['#2c5a73', '#1e3c4f']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.statCard}
+      >
+        <View style={styles.cardHeader}>
+          <View style={styles.iconContainer}>
+            <Icon name={icon} size={28} color="#fff" />
+          </View>
+          {loading ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Text style={styles.cardValue}>
+              {displayValue}
+            </Text>
+          )}
         </View>
-      </View>
-      
-      {loading ? (
-        <ActivityIndicator size="small" color="#272b2e" style={styles.loadingIndicator} />
-      ) : (
-        <Text style={styles.cardValue}>
-          {displayValue}
-        </Text>
-      )}
-      
-      <Text style={styles.cardTitle}>{title}</Text>
-      
-      {subText && <Text style={styles.cardSubText}>{subText}</Text>}
-      
-      <View style={styles.cardFooter}>
-        <Text style={styles.viewText}>View Details</Text>
-        <Icon name="chevron-right" size={16} color="#fff" />
-      </View>
+        
+        <Text style={styles.cardTitle}>{title}</Text>
+        
+        {subText && (
+          <Text style={styles.cardSubText}>{subText}</Text>
+        )}
+        
+        <View style={styles.cardFooter}>
+          <Text style={styles.viewText}>View Details</Text>
+          <Icon name="chevron-right" size={16} color="#fff" />
+        </View>
+      </LinearGradient>
     </TouchableOpacity>
   );
 };
-
-// Placeholder Image Component
-const PlaceholderImage = () => (
-  <View style={styles.placeImagePlaceholder}>
-    <Icon name="image" size={30} color="#90bbd4e3" />
-    <Text style={styles.placeholderText}>No Image</Text>
-  </View>
-);
 
 // Time-based greeting
 const getGreeting = () => {
@@ -104,21 +167,15 @@ export default function AdminDashboard({ navigation }) {
   // Load Admin Dashboard Data
   const loadDashboardData = async () => {
     try {
-      console.log("📡 Fetching dashboard data...");
       let response;
       try {
         response = await api.get(API.ADMIN_DASHBOARD);
       } catch (getError) {
-        console.log("GET failed, trying POST...");
         response = await api.post(API.ADMIN_DASHBOARD);
       }
       
       const responseData = response.data || {};
-      console.log("📊 Dashboard Full Response:", JSON.stringify(responseData, null, 2));
-      
-      // ✅ FIXED: Extract data from response.data.data
       const data = responseData.data || {};
-      console.log("📊 Dashboard Data:", data);
       
       return {
         users: data.totalUsers || 0,
@@ -129,7 +186,7 @@ export default function AdminDashboard({ navigation }) {
         pendingWithdrawals: data.pendingWithdrawals || 0,
       };
     } catch (error) {
-      console.error("❌ Dashboard data error:", error.response?.data || error.message);
+      console.error("❌ Dashboard data error:", error);
       return null;
     }
   };
@@ -137,31 +194,16 @@ export default function AdminDashboard({ navigation }) {
   // Load Photographer Requests Count
   const loadPhotographerRequests = async () => {
     try {
-      console.log("📡 Fetching photographer requests...");
-      const response = await api.post(API.GET_PHOTOGRAPHERS_ALL, {
-        admin: true,
-      });
-      
+      const response = await api.post(API.GET_PHOTOGRAPHERS_ALL, { admin: true });
       const responseData = response.data || {};
-      console.log("📸 Photographers Full Response:", JSON.stringify(responseData, null, 2));
-      
-      // ✅ FIXED: Extract data from response.data.data
       const photographersData = responseData.data || [];
-      console.log("📸 Photographers Array:", photographersData.length);
       
-      // Count pending requests - use approvalStatus
-      const pendingRequests = photographersData.filter(photographer => 
-        photographer.approvalStatus === "PENDING" || 
-        photographer.approvalStatus === "pending" ||
-        !photographer.approvalStatus ||
-        photographer.approvalStatus === "IN_REVIEW"
+      return photographersData.filter(p => 
+        p.approvalStatus === "PENDING" || 
+        p.approvalStatus === "pending" ||
+        !p.approvalStatus
       ).length;
-      
-      console.log("📸 Pending Photographer Requests:", pendingRequests);
-      
-      return pendingRequests;
     } catch (error) {
-      console.error("❌ Photographer requests error:", error);
       return 0;
     }
   };
@@ -169,31 +211,16 @@ export default function AdminDashboard({ navigation }) {
   // Load Guider Requests Count
   const loadGuiderRequests = async () => {
     try {
-      console.log("📡 Fetching guider requests...");
-      const response = await api.post(API.GET_GUIDERS_ALL, {
-        admin: true,
-      });
-      
+      const response = await api.post(API.GET_GUIDERS_ALL, { admin: true });
       const responseData = response.data || {};
-      console.log("🧭 Guiders Full Response:", JSON.stringify(responseData, null, 2));
-      
-      // ✅ FIXED: Extract data from response.data.data
       const guidersData = responseData.data || [];
-      console.log("🧭 Guiders Array:", guidersData.length);
       
-      // Count pending requests - use approvalStatus
-      const pendingRequests = guidersData.filter(guider => 
-        guider.approvalStatus === "PENDING" || 
-        guider.approvalStatus === "pending" ||
-        !guider.approvalStatus ||
-        guider.approvalStatus === "IN_REVIEW"
+      return guidersData.filter(g => 
+        g.approvalStatus === "PENDING" || 
+        g.approvalStatus === "pending" ||
+        !g.approvalStatus
       ).length;
-      
-      console.log("🧭 Pending Guider Requests:", pendingRequests);
-      
-      return pendingRequests;
     } catch (error) {
-      console.error("❌ Guider requests error:", error);
       return 0;
     }
   };
@@ -201,36 +228,19 @@ export default function AdminDashboard({ navigation }) {
   // Load Places Data
   const loadPlaces = async () => {
     try {
-      console.log("📡 Fetching places...");
-      const response = await api.post(API.GET_PLACES, { 
-        page: 1, 
-        perPage: 6,
-      });
-      
+      const response = await api.post(API.GET_PLACES, { page: 1, perPage: 6 });
       const responseData = response.data || {};
-      console.log("📍 Places Full Response:", JSON.stringify(responseData, null, 2));
-      
-      // ✅ FIXED: Extract data from response.data
-      const placesData = responseData.data || responseData || [];
-      console.log("📍 Places Array:", placesData.length);
-      
-      return Array.isArray(placesData) ? placesData : [];
+      return responseData.data || [];
     } catch (error) {
-      console.error("❌ Places error:", error);
       return [];
     }
   };
 
-  // Load All Data - FIXED VERSION
+  // Load All Data
   const loadAllData = async (isRefresh = false) => {
-    if (!isRefresh) {
-      setLoading(true);
-    }
-    
-    console.log("🔄 Loading all dashboard data...");
+    if (!isRefresh) setLoading(true);
     
     try {
-      // Use Promise.allSettled instead of Promise.all
       const results = await Promise.allSettled([
         loadDashboardData(),
         loadPhotographerRequests(),
@@ -238,15 +248,11 @@ export default function AdminDashboard({ navigation }) {
         loadPlaces(),
       ]);
       
-      console.log("✅ All API calls completed");
-      
-      // Process results
       const dashboardData = results[0].status === 'fulfilled' ? results[0].value : null;
       const photographerRequests = results[1].status === 'fulfilled' ? results[1].value : 0;
       const guiderRequests = results[2].status === 'fulfilled' ? results[2].value : 0;
       const placesData = results[3].status === 'fulfilled' ? results[3].value : [];
       
-      // Update counts
       setCounts(prev => ({
         ...prev,
         users: dashboardData?.users || 0,
@@ -255,29 +261,14 @@ export default function AdminDashboard({ navigation }) {
         places: dashboardData?.places || 0,
         transactions: dashboardData?.transactions || 0,
         pendingWithdrawals: dashboardData?.pendingWithdrawals || 0,
-        photographerRequests: photographerRequests,
-        guiderRequests: guiderRequests,
-      }));
-      
-      // Update places
-      setPlaces(placesData);
-      
-      // Update last update time
-      setLastUpdate(new Date());
-      
-      console.log("✅ Dashboard data loaded successfully!");
-      console.log("📊 Final counts:", {
-        users: dashboardData?.users || 0,
-        photographers: dashboardData?.photographers || 0,
-        guiders: dashboardData?.guiders || 0,
-        places: dashboardData?.places || 0,
         photographerRequests,
         guiderRequests,
-      });
+      }));
       
+      setPlaces(placesData);
+      setLastUpdate(new Date());
     } catch (error) {
       console.error("❌ Load all data error:", error);
-      // Even if there's an error, stop loading
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -291,162 +282,60 @@ export default function AdminDashboard({ navigation }) {
   };
 
   useEffect(() => {
-    // Initial load
     loadAllData();
-    
-    // Set up refresh interval (every 2 minutes)
-    const interval = setInterval(() => {
-      console.log("🔄 Auto-refreshing dashboard...");
-      loadAllData(true);
-    }, 120000);
-
+    const interval = setInterval(() => loadAllData(true), 120000);
     return () => clearInterval(interval);
   }, []);
 
   // Main cards for overview
   const mainCards = [
-    { 
-      label: "Total Users", 
-      value: counts.users, 
-      icon: "account-group", 
-      route: "UserList", 
-      color: "#90bbd4e3",
-      subText: "Registered users",
-      loading: loading && !initialLoadComplete,
-    },
-    { 
-      label: "Photographers", 
-      value: counts.photographers, 
-      icon: "camera", 
-      route: "PhotographerList", 
-      color: "#90bbd4e3",
-      subText: "Active photographers",
-      loading: loading && !initialLoadComplete,
-    },
-    { 
-      label: "Guiders", 
-      value: counts.guiders, 
-      icon: "map-marker-account", 
-      route: "GuiderList", 
-      color: "#90bbd4e3",
-      subText: "Active tourist guiders",
-      loading: loading && !initialLoadComplete,
-    },
-    { 
-      label: "Places", 
-      value: counts.places, 
-      icon: "map-marker-multiple", 
-      route: "PlaceList", 
-      color: "#90bbd4e3",
-      subText: "Tourist places",
-      loading: loading && !initialLoadComplete,
-    },
+    { label: "Total Users", value: counts.users, icon: "account-group", route: "UserList", subText: "Registered users" },
+    { label: "Photographers", value: counts.photographers, icon: "camera", route: "PhotographerList", subText: "Active photographers" },
+    { label: "Guiders", value: counts.guiders, icon: "map-marker-account", route: "GuiderList", subText: "Active guides" },
+    { label: "Places", value: counts.places, icon: "map-marker-multiple", route: "PlaceList", subText: "Tourist places" },
   ];
 
   // Request cards
   const requestCards = [
-    { 
-      label: "Photographer Requests", 
-      value: counts.photographerRequests, 
-      icon: "camera-account", 
-      route: "PhotographerRequests", 
-      color: "#90bbd4e3",
-      subText: "Pending approval",
-      loading: loading && !initialLoadComplete,
-    },
-    { 
-      label: "Guider Requests", 
-      value: counts.guiderRequests, 
-      icon: "account-clock", 
-      route: "GuiderRequests", 
-      color: "#90bbd4e3",
-      subText: "Pending approval",
-      loading: loading && !initialLoadComplete,
-    },
-    { 
-      label: "Withdrawal Requests", 
-      value: counts.pendingWithdrawals, 
-      icon: "cash-clock", 
-      route: "WithdrawalList", 
-      color: "#90bbd4e3",
-      subText: "Pending withdrawals",
-      loading: loading && !initialLoadComplete,
-    },
+    { label: "Photographer Requests", value: counts.photographerRequests, icon: "camera-account", route: "PhotographerRequests", subText: "Pending approval" },
+    { label: "Guider Requests", value: counts.guiderRequests, icon: "account-clock", route: "GuiderRequests", subText: "Pending approval" },
+    { label: "Withdrawals", value: counts.pendingWithdrawals, icon: "cash-clock", route: "WithdrawalList", subText: "Pending withdrawals" },
   ];
 
   // Financial cards
   const financialCards = [
-    { 
-      label: "Transactions", 
-      value: counts.transactions, 
-      icon: "credit-card", 
-      route: "TransactionList", 
-      color: "#90bbd4e3",
-      subText: "All time transactions",
-      loading: loading && !initialLoadComplete,
-    },
+    { label: "Transactions", value: counts.transactions, icon: "credit-card", route: "TransactionList", subText: "All transactions", isCurrency: false },
   ];
 
   // Quick action cards
   const quickActionCards = [
-    { 
-      label: "Notifications", 
-      icon: "bell-outline", 
-      route: "NotificationList", 
-      color: "#90bbd4e3",
-      subText: "View all alerts",
-    },
-    { 
-      label: "Settings", 
-      icon: "cog-outline", 
-      route: "AdminSettings", 
-      color: "#90bbd4e3",
-      subText: "System configuration",
-    },
-    { 
-      label: "Withdrawals", 
-      icon: "cash-multiple", 
-      route: "WithdrawalList", 
-      color: "#90bbd4e3",
-      subText: "Manage payouts",
-    },
-    { 
-      label: "Appointments", 
-      icon: "calendar", 
-      route: "AppointmentList", 
-      color: "#90bbd4e3",
-      subText: "View bookings",
-    },
+    { label: "Notifications", icon: "bell-outline", route: "NotificationList", subText: "View alerts" },
+    { label: "Settings", icon: "cog-outline", route: "AdminSettings", subText: "Configuration" },
+    { label: "Withdrawals", icon: "cash-multiple", route: "WithdrawalList", subText: "Manage payouts" },
+    { label: "Appointments", icon: "calendar", route: "AppointmentList", subText: "View bookings" },
   ];
 
-  const renderSection = (title, data, columns = 2) => {
-    return (
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{title}</Text>
-        <View style={[styles.cardsRow, { justifyContent: 'space-between' }]}>
-          {data.map((item, index) => (
-            <StatCard
-              key={index.toString()}
-              title={item.label}
-              value={item.value}
-              icon={item.icon}
-              color={item.color}
-              subText={item.subText}
-              loading={item.loading}
-              isCurrency={item.isCurrency}
-              onPress={() => {
-                if (item.route && navigation) {
-                  console.log(`Navigating to: ${item.route}`);
-                  navigation.navigate(item.route);
-                }
-              }}
-            />
-          ))}
-        </View>
+  const renderSection = (title, data) => (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      <View style={styles.cardsRow}>
+        {data.map((item, index) => (
+          <StatCard
+            key={index.toString()}
+            title={item.label}
+            value={item.value}
+            icon={item.icon}
+            subText={item.subText}
+            loading={loading && !initialLoadComplete}
+            isCurrency={item.isCurrency}
+            onPress={() => item.route && navigation.navigate(item.route)}
+          />
+        ))}
       </View>
-    );
-  };
+    </View>
+  );
 
+  // Original Place Card Component
   const renderPlaceCard = ({ item, index }) => {
     if (!item) return null;
     
@@ -466,21 +355,17 @@ export default function AdminDashboard({ navigation }) {
           }
         }}
       >
-        {featuredImage ? (
-          <Image 
-            source={{ uri: featuredImage }} 
-            style={styles.placeImage}
-          />
-        ) : (
-          <PlaceholderImage />
-        )}
+        <PlaceImage
+          imagePath={featuredImage}
+          style={styles.placeImage}
+        />
         <View style={styles.placeInfo}>
           <Text style={styles.placeName} numberOfLines={1}>
             {placeName}
           </Text>
           {(city || state) && (
             <View style={styles.placeLocation}>
-              <Icon name="map-marker" size={12} color="#666" />
+              <Icon name="map-marker" size={12} color="#2c5a73" />
               <Text style={styles.placeCity} numberOfLines={1}>
                 {city ? `${city}${state ? `, ${state}` : ''}` : state || ""}
               </Text>
@@ -488,7 +373,7 @@ export default function AdminDashboard({ navigation }) {
           )}
           {item.views !== undefined && (
             <View style={styles.placeViews}>
-              <Icon name="eye" size={12} color="#666" />
+              <Icon name="eye" size={12} color="#2c5a73" />
               <Text style={styles.viewsText}>{item.views} views</Text>
             </View>
           )}
@@ -507,7 +392,7 @@ export default function AdminDashboard({ navigation }) {
         }
       }}
     >
-      <View style={[styles.quickActionIcon, { backgroundColor: item.color }]}>
+      <View style={[styles.quickActionIcon, { backgroundColor: '#2c5a73' }]}>
         <Icon name={item.icon} size={24} color="#fff" />
       </View>
       <Text style={styles.quickActionLabel}>{item.label}</Text>
@@ -516,38 +401,29 @@ export default function AdminDashboard({ navigation }) {
   );
 
   return (
-    <View style={styles.container}>
-      <StatusBar backgroundColor="#42738fe3" barStyle="light-content" />
+    <SafeAreaView style={styles.container}>
+      <StatusBar backgroundColor="#2c5a73" barStyle="light-content" />
 
-      {/* HEADER */}
-      <View style={styles.header}>
+      {/* Header with Gradient */}
+      <LinearGradient colors={['#2c5a73', '#1e3c4f']} style={styles.header}>
         <View style={styles.headerTop}>
           <View style={styles.headerLeft}>
-            <TouchableOpacity 
-              style={styles.menuButton}
-              onPress={() => setOverlayVisible(true)}
-            >
+            <TouchableOpacity style={styles.menuButton} onPress={() => setOverlayVisible(true)}>
               <Icon name="menu" size={28} color="#fff" />
             </TouchableOpacity>
             <View>
               <Text style={styles.greeting}>{greeting}</Text>
-              {/* <Text style={styles.subtitle}>Dashboard Overview</Text> */}
+              <Text style={styles.subtitle}>Admin Dashboard</Text>
             </View>
           </View>
           
-          <View style={styles.headerRight}>
-            <TouchableOpacity 
-              style={styles.refreshButton}
-              onPress={onRefresh}
-              disabled={refreshing || loading}
-            >
-              {refreshing ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Icon name="refresh" size={22} color="#fff" />
-              )}
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity style={styles.refreshButton} onPress={onRefresh} disabled={refreshing}>
+            {refreshing ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Icon name="refresh" size={22} color="#fff" />
+            )}
+          </TouchableOpacity>
         </View>
 
         {/* Last Update Time */}
@@ -557,278 +433,335 @@ export default function AdminDashboard({ navigation }) {
             Updated: {lastUpdate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </Text>
         </View>
+      </LinearGradient>
+
+      {/* Stats Preview Cards - Below Header */}
+      <View style={styles.statsPreviewContainer}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.statsPreviewScroll}
+        >
+          <View style={styles.statPreviewItem}>
+            <Icon name="account-group" size={24} color="#2c5a73" />
+            <Text style={styles.statPreviewValue}>{counts.users}</Text>
+            <Text style={styles.statPreviewLabel}>Users</Text>
+          </View>
+          <View style={styles.statPreviewItem}>
+            <Icon name="camera" size={24} color="#2c5a73" />
+            <Text style={styles.statPreviewValue}>{counts.photographers}</Text>
+            <Text style={styles.statPreviewLabel}>Photographers</Text>
+          </View>
+          <View style={styles.statPreviewItem}>
+            <Icon name="map-marker-account" size={24} color="#2c5a73" />
+            <Text style={styles.statPreviewValue}>{counts.guiders}</Text>
+            <Text style={styles.statPreviewLabel}>Guides</Text>
+          </View>
+          <View style={styles.statPreviewItem}>
+            <Icon name="map-marker-multiple" size={24} color="#2c5a73" />
+            <Text style={styles.statPreviewValue}>{counts.places}</Text>
+            <Text style={styles.statPreviewLabel}>Places</Text>
+          </View>
+          <View style={styles.statPreviewItem}>
+            <Icon name="credit-card" size={24} color="#2c5a73" />
+            <Text style={styles.statPreviewValue}>{counts.transactions}</Text>
+            <Text style={styles.statPreviewLabel}>Transactions</Text>
+          </View>
+          <View style={styles.statPreviewItem}>
+            <Icon name="cash-clock" size={24} color="#2c5a73" />
+            <Text style={styles.statPreviewValue}>{counts.pendingWithdrawals}</Text>
+            <Text style={styles.statPreviewLabel}>Withdrawals</Text>
+          </View>
+        </ScrollView>
       </View>
 
-      {/* CONTENT */}
+      {/* Content */}
       <ScrollView
         style={styles.content}
         showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={["#42738f"]}
-            tintColor="#42738f"
-          />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#2c5a73"]} />}
       >
-        {/* Loading State */}
         {loading && !initialLoadComplete ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#42738f" />
-            <Text style={styles.loadingText}>Loading dashboard data...</Text>
+            <ActivityIndicator size="large" color="#2c5a73" />
+            <Text style={styles.loadingText}>Loading dashboard...</Text>
           </View>
         ) : (
-          <>
-            {/* Data Loaded State */}
-            <View style={styles.dataContainer}>
-              {/* Debug Info - Only show in development */}
-              {__DEV__ && (
-                <View style={styles.debugInfo}>
-                  <Text style={styles.debugText}>
-                    Data Loaded Successfully | Last Update: {lastUpdate.toLocaleTimeString()}
-                  </Text>
-                </View>
-              )}
-
-              {renderSection("Platform Overview", mainCards)}
-              {renderSection("Pending Requests", requestCards, 3)}
-              {renderSection("Financial Overview", financialCards)}
-              
-              {/* Popular Places */}
-              {places.length > 0 && (
-                <View style={styles.section}>
-                  <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>Popular Places ({places.length})</Text>
-                    <TouchableOpacity onPress={() => navigation.navigate("PlaceList")}>
-                      <Text style={styles.viewAll}>View All →</Text>
-                    </TouchableOpacity>
-                  </View>
-                  <FlatList
-                    data={places}
-                    keyExtractor={(item, index) => (item.id || index).toString()}
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    renderItem={renderPlaceCard}
-                    contentContainerStyle={styles.placesList}
-                  />
-                </View>
-              )}
-
-              {/* Quick Actions */}
+          <View style={styles.dataContainer}>
+            {renderSection("Platform Overview", mainCards)}
+            
+            <View style={styles.divider} />
+            
+            {renderSection("Pending Requests", requestCards)}
+            
+            <View style={styles.divider} />
+            
+            {renderSection("Financial Overview", financialCards)}
+            
+            {/* Popular Places - Original Card Style */}
+            {places.length > 0 && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Quick Actions</Text>
-                <View style={styles.quickActions}>
-                  {quickActionCards.map(renderQuickAction)}
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>Popular Places</Text>
+                  <TouchableOpacity onPress={() => navigation.navigate("PlaceList")}>
+                    <Text style={styles.viewAll}>View All →</Text>
+                  </TouchableOpacity>
                 </View>
+                <FlatList
+                  data={places}
+                  keyExtractor={(item, index) => (item.id || index).toString()}
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  renderItem={renderPlaceCard}
+                  contentContainerStyle={styles.placesList}
+                />
               </View>
+            )}
 
-              {/* Last Update Footer */}
-              <View style={styles.footer}>
-                <Text style={styles.footerText}>
-                  Dashboard updated at {lastUpdate.toLocaleTimeString()}
-                </Text>
+            {/* Quick Actions */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Quick Actions</Text>
+              <View style={styles.quickActions}>
+                {quickActionCards.map(renderQuickAction)}
               </View>
             </View>
-          </>
+
+            <View style={styles.footer}>
+              <Text style={styles.footerText}>Admin Dashboard v1.0</Text>
+            </View>
+          </View>
         )}
       </ScrollView>
 
-      {/* ADMIN MENU OVERLAY */}
+      {/* Menu Overlay */}
       {overlayVisible && (
         <AdminMenuOverlay
           onClose={() => setOverlayVisible(false)}
           onNavigate={(route) => {
             setOverlayVisible(false);
-            if (navigation) {
-              navigation.navigate(route);
-            }
+            navigation.navigate(route);
           }}
         />
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F5F7FB",
+    backgroundColor: '#f5f7fa',
   },
   header: {
-    backgroundColor: "#42738fe3",
     paddingHorizontal: 20,
     paddingTop: 50,
-    paddingBottom: 20,
+    paddingBottom: 15,
     borderBottomLeftRadius: 30,
     borderBottomRightRadius: 30,
-    elevation: 8,
-    shadowColor: "#000",
+    elevation: 10,
+    shadowColor: '#2c5a73',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.3,
     shadowRadius: 12,
   },
   headerTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 15,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
   },
   headerLeft: {
-    flexDirection: "row",
-    alignItems: "flex-start",
+    flexDirection: 'row',
+    alignItems: 'center',
     flex: 1,
   },
   menuButton: {
-    padding: 5,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
     marginRight: 15,
-    marginTop: 5,
   },
   greeting: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#fff",
-    marginBottom: 4,
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 2,
   },
   subtitle: {
-    fontSize: 14,
-    color: "rgba(255, 255, 255, 0.9)",
-    fontWeight: "500",
-  },
-  headerRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.9)',
+    fontWeight: '500',
   },
   refreshButton: {
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    padding: 10,
-    borderRadius: 12,
-    width: 42,
-    height: 42,
-    justifyContent: "center",
-    alignItems: "center",
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   updateTimeContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.1)',
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 12,
-    alignSelf: "flex-start",
+    borderRadius: 20,
+    alignSelf: 'flex-start',
   },
   updateTimeText: {
-    fontSize: 12,
-    color: "rgba(255, 255, 255, 0.9)",
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.9)',
     marginLeft: 6,
+  },
+  statsPreviewContainer: {
+    backgroundColor: '#fff',
+    paddingVertical: 12,
+  
+    marginTop: -10,
+    marginHorizontal: 16,
+    borderRadius: 20,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    marginBottom: 10,
+    marginTop:20
+  },
+  statsPreviewScroll: {
+    paddingHorizontal: 0,
+  },
+  statPreviewItem: {
+    alignItems: 'center',
+    marginHorizontal: 12,
+    minWidth: 70,
+  },
+  statPreviewValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2c5a73',
+    marginTop: 4,
+  },
+  statPreviewLabel: {
+    fontSize: 11,
+    color: '#666',
+    marginTop: 2,
+    textAlign: 'center',
   },
   content: {
     flex: 1,
   },
   dataContainer: {
-    minHeight: 600, // Ensure content area has minimum height
+    paddingBottom: 20,
   },
   loadingContainer: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: 'center',
+    alignItems: 'center',
     paddingTop: 100,
     minHeight: 400,
   },
   loadingText: {
-    marginTop: 20,
+    marginTop: 15,
     fontSize: 16,
-    color: "#666",
+    color: '#2c5a73',
+    fontWeight: '500',
   },
   section: {
-    marginTop: 25,
-    paddingHorizontal: 20,
-    marginBottom: 10,
+    paddingHorizontal: 16,
+    marginTop: 20,
   },
   sectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 15,
   },
   sectionTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#272b2e",
-    marginBottom: 15,
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2c5a73',
+    marginBottom: 10,
   },
   viewAll: {
     fontSize: 14,
-    color: "#42738f",
-    fontWeight: "600",
+    color: '#2c5a73',
+    fontWeight: '600',
+  },
+  divider: {
+    height: 8,
+    backgroundColor: '#f0f0f0',
+    marginTop: 20,
   },
   cardsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  cardWrapper: {
+    width: CARD_WIDTH,
+    marginBottom: 16,
   },
   statCard: {
-    width: CARD_WIDTH,
     borderRadius: 20,
-    padding: 18,
-    marginBottom: 16,
+    padding: 16,
     elevation: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 3 },
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 8,
+    shadowRadius: 4,
   },
   cardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 15,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   iconContainer: {
-    width: 50,
-    height: 50,
-    borderRadius: 15,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  loadingIndicator: {
-    marginVertical: 10,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   cardValue: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "#272b2e",
-    marginBottom: 5,
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#fff',
   },
   cardTitle: {
     fontSize: 14,
-    fontWeight: "600",
-    color: "#272b2e",
+    fontWeight: '600',
+    color: '#fff',
     marginBottom: 4,
   },
   cardSubText: {
     fontSize: 11,
-    color: "#272b2e",
-    opacity: 0.8,
+    color: 'rgba(255,255,255,0.8)',
     marginBottom: 12,
   },
   cardFooter: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "flex-end",
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
     borderTopWidth: 1,
-    borderTopColor: "rgba(255, 255, 255, 0.2)",
-    paddingTop: 8,
+    borderTopColor: 'rgba(255,255,255,0.2)',
+    paddingTop: 10,
   },
   viewText: {
-    fontSize: 10,
-    color: "#fff",
-    fontWeight: "500",
+    fontSize: 11,
+    color: '#fff',
+    fontWeight: '500',
     marginRight: 4,
   },
   placesList: {
     paddingBottom: 10,
+    paddingRight: 16,
   },
   placeCard: {
     width: 160,
@@ -845,7 +778,6 @@ const styles = StyleSheet.create({
   placeImage: {
     width: "100%",
     height: 120,
-    resizeMode: "cover",
   },
   placeImagePlaceholder: {
     width: "100%",
@@ -853,11 +785,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#f3f4f6",
     justifyContent: "center",
     alignItems: "center",
-  },
-  placeholderText: {
-    marginTop: 5,
-    fontSize: 12,
-    color: "#90bbd4e3",
   },
   placeInfo: {
     padding: 12,
@@ -875,7 +802,7 @@ const styles = StyleSheet.create({
   },
   placeCity: {
     fontSize: 11,
-    color: "#666",
+    color: "#2c5a73",
     marginLeft: 4,
   },
   placeViews: {
@@ -884,23 +811,23 @@ const styles = StyleSheet.create({
   },
   viewsText: {
     fontSize: 11,
-    color: "#666",
+    color: "#2c5a73",
     marginLeft: 4,
   },
   quickActions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
   },
   quickAction: {
     width: CARD_WIDTH,
-    alignItems: "center",
-    backgroundColor: "#fff",
+    alignItems: 'center',
+    backgroundColor: '#fff',
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
     elevation: 2,
-    shadowColor: "#000",
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 4,
@@ -909,42 +836,28 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 15,
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: 10,
   },
   quickActionLabel: {
     fontSize: 13,
-    fontWeight: "600",
-    color: "#333",
+    fontWeight: '600',
+    color: '#333',
     marginBottom: 4,
-    textAlign: "center",
+    textAlign: 'center',
   },
   quickActionSub: {
     fontSize: 10,
-    color: "#666",
-    textAlign: "center",
-  },
-  debugInfo: {
-    backgroundColor: "#f0f9ff",
-    margin: 16,
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#bae6fd",
-  },
-  debugText: {
-    fontSize: 12,
-    color: "#0369a1",
-    textAlign: "center",
+    color: '#666',
+    textAlign: 'center',
   },
   footer: {
     padding: 20,
-    alignItems: "center",
+    alignItems: 'center',
   },
   footerText: {
     fontSize: 12,
-    color: "#666",
-    textAlign: "center",
+    color: '#999',
   },
 });

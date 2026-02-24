@@ -61,7 +61,7 @@ export default function UserProfileScreen({ navigation }) {
         image?.uri
             ? image.uri
             : user?.profilePicture
-                ? `${BASE_URL}/Uploads/${user.profilePicture}`
+                ? `${BASE_URL}/api/image/download/${user.profilePicture}`
                 : null;
 
     /* 📸 PICK IMAGE */

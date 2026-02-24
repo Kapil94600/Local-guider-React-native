@@ -303,7 +303,7 @@ export default function GuiderListScreen({ navigation, route }) {
     try {
       // Remove any leading slashes
       const cleanPath = path.replace(/^\/+/, '');
-      return `${BASE_URL}/Uploads/${cleanPath}`;
+      return `${BASE_URL}/api/image/download/${cleanPath}`;
     } catch (error) {
       return null;
     }

@@ -27,28 +27,25 @@ import { API } from "../api/endpoints";
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const BASE_URL = "https://localguider.sinfode.com";
 
-// Local images from assets folder - आप अपनी images यहां लगाएं
+// Local images from assets folder
 const FEATURED_IMAGES = [
   {
     id: 1,
     source: require("../../assets/images/place6.jpg"),
     title: "Lake Pichola",
     location: "Udaipur",
-
   },
   {
     id: 2,
     source: require("../../assets/images/place1.jpg"),
     title: "Hawa Mahal",
     location: "Jaipur",
-
   },
   {
     id: 3,
     source: require("../../assets/images/place2.jpg"),
     title: "Jaisalmer Fort",
     location: "Jaisalmer",
-
   },
   {
     id: 4,
@@ -62,37 +59,88 @@ const FEATURED_IMAGES = [
     source: require("../../assets/images/place5.jpg"),
     title: "Amber Fort",
     location: "Jaipur",
-
   },
   {
     id: 6,
     source: require("../../assets/images/place4.jpg"),
     title: "Ladakh",
     location: "Ladakh (Leh–Manali Highway Region)",
-
   },
   {
     id: 7,
     source: require("../../assets/images/place7.jpg"),
     title: "Dharamshala",
     location: "Himachal Pradesh",
-
   },
   {
     id: 8,
     source: require("../../assets/images/place8.jpg"),
     title: "Baga Beach",
     location: "Goa",
-
   },
   {
     id: 9,
     source: require("../../assets/images/place9.jpg"),
     title: "Nahargarh Fort",
     location: "Jaipur",
-
   },
 ];
+
+// 🔥 Get image URL from filename
+const getImageUrl = (path) => {
+  if (!path) return null;
+  if (path.startsWith("http")) return path;
+  try {
+    const filename = path.split("/").pop();
+    return `${BASE_URL}/api/image/download/${filename}`;
+  } catch (error) {
+    return null;
+  }
+};
+
+// 🔥 Image Component for Places
+const PlaceImage = ({ imagePath, style }) => {
+  const [imageUrl, setImageUrl] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    if (!imagePath) {
+      setError(true);
+      setLoading(false);
+      return;
+    }
+    
+    const url = getImageUrl(imagePath);
+    setImageUrl(url);
+    setLoading(false);
+  }, [imagePath]);
+
+  if (loading) {
+    return (
+      <View style={[style, styles.placeImagePlaceholder]}>
+        <ActivityIndicator size="small" color="#2c5a73" />
+      </View>
+    );
+  }
+
+  if (error || !imageUrl) {
+    return (
+      <View style={[style, styles.placeImagePlaceholder]}>
+        <Ionicons name="image-outline" size={30} color="#2c5a73" />
+      </View>
+    );
+  }
+
+  return (
+    <Image
+      source={{ uri: imageUrl }}
+      style={style}
+      onError={() => setError(true)}
+      resizeMode="cover"
+    />
+  );
+};
 
 export default function UserDashboard({ navigation }) {
   const { user, refreshUser } = useContext(AuthContext);
@@ -150,7 +198,7 @@ export default function UserDashboard({ navigation }) {
     }
   }, [location]);
 
-  // ✅ Auto-scroll effect for image carousel
+  // Auto-scroll effect for image carousel
   useEffect(() => {
     startAutoScroll();
     return () => {
@@ -178,7 +226,7 @@ export default function UserDashboard({ navigation }) {
           return nextIndex;
         });
       }
-    }, 4000); // Change every 4 seconds
+    }, 4000);
   };
 
   const handleScroll = Animated.event(
@@ -372,17 +420,6 @@ export default function UserDashboard({ navigation }) {
     });
   };
 
-  const getImageUrl = (path) => {
-    if (!path) return null;
-    if (path.startsWith("http")) return path;
-    try {
-      const filename = path.split("/").pop();
-      return `${BASE_URL}/Uploads/${filename}`;
-    } catch (error) {
-      return null;
-    }
-  };
-
   const userName = user?.name?.trim()
     ? user.name
     : user?.username || user?.email || "User";
@@ -413,7 +450,7 @@ export default function UserDashboard({ navigation }) {
     return <View style={{ flexDirection: 'row' }}>{stars}</View>;
   };
 
-  // ✅ Beautiful Card Type Auto-Scrolling Carousel - NON-CLICKABLE
+  // Featured Carousel
   const renderFeaturedCarousel = () => (
     <View style={styles.featuredCarouselWrapper}>
       <FlatList
@@ -430,32 +467,16 @@ export default function UserDashboard({ navigation }) {
               style={styles.featuredCardImage}
               resizeMode="cover"
             />
-
-            {/* Gradient Overlay */}
             <LinearGradient
               colors={['transparent', 'rgba(0,0,0,0.8)']}
               style={styles.featuredCardOverlay}
             />
-
-            {/* Card Content */}
             <View style={styles.featuredCardContent}>
-              <View style={styles.featuredCardHeader}>
-                <Text style={styles.featuredCardTitle}>{item.title}</Text>
-                <View style={styles.featuredCardRating}>
-                  {/* <Ionicons name="star" size={14} color="#FFD700" /> */}
-                  {/* <Text style={styles.featuredCardRatingText}>{item.rating}</Text> */}
-                </View>
-              </View>
-
+              <Text style={styles.featuredCardTitle}>{item.title}</Text>
               <View style={styles.featuredCardLocation}>
                 <Ionicons name="location-outline" size={12} color="#fff" />
                 <Text style={styles.featuredCardLocationText}>{item.location}</Text>
               </View>
-
-              {/* <View style={styles.featuredCardBadge}>
-                <Text style={styles.featuredCardBadgeText}>Explore Now</Text>
-                <Ionicons name="arrow-forward" size={12} color="#fff" />
-              </View> */}
             </View>
           </View>
         )}
@@ -465,7 +486,6 @@ export default function UserDashboard({ navigation }) {
         decelerationRate="fast"
       />
 
-      {/* Custom Pagination */}
       <View style={styles.paginationWrapper}>
         {FEATURED_IMAGES.map((_, index) => {
           const inputRange = [
@@ -503,35 +523,80 @@ export default function UserDashboard({ navigation }) {
     </View>
   );
 
-  // ✅ Modern Search Bar
-  const renderSearchBar = () => (
-    <View style={styles.searchWrapper}>
-      {/* <LinearGradient
-        colors={['#ffffff', '#f8fafc']}
-        style={styles.searchGradient}
-      >
-        <View style={styles.searchContainer}>
-          <Ionicons name="search-outline" size={20} color="#2c5a73" />
-          <TextInput
-            placeholder="Search places, guides, photographers..."
-            placeholderTextColor="#94a3b8"
-            style={styles.searchInput}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            onSubmitEditing={handleSearch}
-            returnKeyType="search"
-          />
-          {searchQuery ? (
-            <TouchableOpacity onPress={() => setSearchQuery("")} style={styles.clearBtn}>
-              <Ionicons name="close-circle" size={18} color="#94a3b8" />
-            </TouchableOpacity>
-          ) : null}
+  // Improved Top Places Card - New Style
+  const renderTopPlaceCard = (place) => (
+    <TouchableOpacity
+      key={place.id}
+      style={styles.topPlaceCard}
+      onPress={() => {
+        setSelectedPlace(place);
+        setPlaceModal(true);
+      }}
+      activeOpacity={0.9}
+    >
+      <View style={styles.topPlaceImageContainer}>
+        <PlaceImage
+          imagePath={place.featuredImage}
+          style={styles.topPlaceImage}
+        />
+        <LinearGradient
+          colors={['transparent', 'rgba(0,0,0,0.8)']}
+          style={styles.topPlaceGradient}
+        />
+        <View style={styles.topPlaceBadge}>
+          <Ionicons name="star" size={12} color="#FFD700" />
+          <Text style={styles.topPlaceBadgeText}>{place.rating?.toFixed(1) || 'New'}</Text>
         </View>
-      </LinearGradient> */}
-    </View>
+      </View>
+      
+      <View style={styles.topPlaceInfo}>
+        <Text style={styles.topPlaceName} numberOfLines={1}>{place.placeName}</Text>
+        <View style={styles.topPlaceLocation}>
+          <Ionicons name="location-outline" size={12} color="#2c5a73" />
+          <Text style={styles.topPlaceLocationText} numberOfLines={1}>{place.city}</Text>
+        </View>
+      </View>
+    </TouchableOpacity>
   );
 
-  // ✅ Place Details Modal
+  // Original Person Card Style for Guiders and Photographers
+  const renderPersonCard = (person, type) => (
+    <TouchableOpacity
+      key={person.id}
+      style={styles.personCardOriginal}
+      onPress={() => {
+        if (type === 'guider') {
+          setSelectedGuider(person);
+          setGuiderModal(true);
+        } else {
+          setSelectedPhotographer(person);
+          setPhotographerModal(true);
+        }
+      }}
+    >
+      {person.featuredImage ? (
+        <Image
+          source={{ uri: getImageUrl(person.featuredImage) }}
+          style={styles.personCardImage}
+        />
+      ) : (
+        <View style={[styles.personCardImage, styles.personImagePlaceholderOriginal]}>
+          <Text style={styles.personInitialOriginal}>
+            {person.firmName?.charAt(0) || person.name?.charAt(0) || (type === 'guider' ? 'G' : 'P')}
+          </Text>
+        </View>
+      )}
+      <Text style={styles.personCardName} numberOfLines={1}>
+        {person.firmName || person.name || (type === 'guider' ? 'Guide' : 'Photographer')}
+      </Text>
+      <View style={styles.personCardRating}>
+        <Ionicons name="star" size={10} color="#FFD700" />
+        <Text style={styles.personCardRatingText}>{person.rating?.toFixed(1) || '0.0'}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+
+  // Place Details Modal
   const renderPlaceModal = () => (
     <Modal
       visible={placeModal}
@@ -555,19 +620,10 @@ export default function UserDashboard({ navigation }) {
                 </TouchableOpacity>
               </View>
 
-              {selectedPlace.featuredImage ? (
-                <Image
-                  source={{ uri: getImageUrl(selectedPlace.featuredImage) }}
-                  style={styles.modalImage}
-                />
-              ) : (
-                <LinearGradient
-                  colors={['#2c5a73', '#1e3c4f']}
-                  style={styles.modalImagePlaceholder}
-                >
-                  <Ionicons name="image-outline" size={40} color="#fff" />
-                </LinearGradient>
-              )}
+              <PlaceImage
+                imagePath={selectedPlace.featuredImage}
+                style={styles.modalImage}
+              />
 
               <View style={styles.modalRating}>
                 {renderRating(selectedPlace.rating)}
@@ -614,7 +670,7 @@ export default function UserDashboard({ navigation }) {
     </Modal>
   );
 
-  // ✅ Guider Details Modal
+  // Guider Details Modal
   const renderGuiderModal = () => (
     <Modal
       visible={guiderModal}
@@ -647,11 +703,14 @@ export default function UserDashboard({ navigation }) {
                     style={styles.modalProfileImage}
                   />
                 ) : (
-                  <View style={[styles.modalProfileImage, styles.modalImagePlaceholder]}>
+                  <LinearGradient
+                    colors={['#2c5a73', '#1e3c4f']}
+                    style={[styles.modalProfileImage, styles.modalImagePlaceholder]}
+                  >
                     <Text style={styles.modalProfileInitial}>
                       {selectedGuider.firmName?.charAt(0) || selectedGuider.name?.charAt(0) || 'G'}
                     </Text>
-                  </View>
+                  </LinearGradient>
                 )}
 
                 <View style={styles.modalRating}>
@@ -712,7 +771,7 @@ export default function UserDashboard({ navigation }) {
     </Modal>
   );
 
-  // ✅ Photographer Details Modal
+  // Photographer Details Modal
   const renderPhotographerModal = () => (
     <Modal
       visible={photographerModal}
@@ -745,11 +804,14 @@ export default function UserDashboard({ navigation }) {
                     style={styles.modalProfileImage}
                   />
                 ) : (
-                  <View style={[styles.modalProfileImage, styles.modalImagePlaceholder]}>
+                  <LinearGradient
+                    colors={['#2c5a73', '#1e3c4f']}
+                    style={[styles.modalProfileImage, styles.modalImagePlaceholder]}
+                  >
                     <Text style={styles.modalProfileInitial}>
                       {selectedPhotographer.firmName?.charAt(0) || selectedPhotographer.name?.charAt(0) || 'P'}
                     </Text>
-                  </View>
+                  </LinearGradient>
                 )}
 
                 <View style={styles.modalRating}>
@@ -812,7 +874,6 @@ export default function UserDashboard({ navigation }) {
 
   return (
     <View style={styles.container}>
-      {/* MENU OVERLAY */}
       <UserMenuOverlay
         visible={menuOpen}
         onClose={() => setMenuOpen(false)}
@@ -822,11 +883,8 @@ export default function UserDashboard({ navigation }) {
         }}
       />
 
-      {/* HEADER with Gradient */}
       <LinearGradient
         colors={['#1e3c4f', '#2c5a73', '#3b7a8f']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
         style={styles.header}
       >
         <View style={styles.headerTop}>
@@ -836,7 +894,7 @@ export default function UserDashboard({ navigation }) {
 
           <TouchableOpacity
             style={styles.locationContainer}
-            onPress={() => navigation.navigate("LocationSearch")}
+            onPress={handleLocationPress}
           >
             <Text style={styles.greeting}>{userName}</Text>
             <View style={styles.locationRow}>
@@ -870,235 +928,129 @@ export default function UserDashboard({ navigation }) {
           />
         }
       >
-        {/* BEAUTIFUL CARD TYPE AUTO-SCROLLING CAROUSEL - NON-CLICKABLE */}
         {renderFeaturedCarousel()}
 
-        {/* MODERN SEARCH BAR - BELOW CAROUSEL */}
-        {renderSearchBar()}
-
-        {/* ===== 3 MAIN CATEGORY CARDS ===== */}
+        {/* Category Cards */}
         <View style={styles.categoryContainer}>
-          {/* Tour Guides Card */}
           <TouchableOpacity
             style={styles.categoryCard}
             onPress={() => navigation.navigate("GuiderListScreen")}
           >
-            <LinearGradient
-              colors={['#d2a0a0', '#4f1e1e']}
-              style={styles.categoryGradient}
-            >
-              <View style={styles.categoryIconContainer}>
-
-                <Image
-                  source={require('../../assets/images/ic_guider_home.webp')}
-                  style={styles.placeCardImage}
-                />
-
-              </View>
-              <Text style={styles.categoryTitle}>Tour Guides</Text>
-              <Text style={styles.categoryCount}></Text>
-            </LinearGradient>
+            <View style={styles.categoryIconContainer}>
+              <Image
+                source={require('../../assets/images/ic_guider_home.webp')}
+                style={styles.categoryIcon}
+              />
+            </View>
+            <Text style={styles.categoryTitle}>Guiders</Text>
           </TouchableOpacity>
 
-          {/* Photographers Card */}
           <TouchableOpacity
             style={styles.categoryCard}
             onPress={() => navigation.navigate("PhotographersListScreen")}
           >
-            <LinearGradient
-              colors={['#1986ae', '#a8d6dd']}
-              style={styles.categoryGradient}
-            >
-              <View style={styles.categoryIconContainer}>
-                <Image
-                  source={require('../../assets/images/ic_photographers_home.webp')}
-                  style={styles.placeCardImage}
-                />
-              </View>
-              <Text style={styles.categoryTitle}>Photographers</Text>
-              <Text style={styles.categoryCount}></Text>
-            </LinearGradient>
+            <View style={styles.categoryIconContainer}>
+              <Image
+                source={require('../../assets/images/ic_photographers_home.webp')}
+                style={styles.categoryIcon}
+              />
+            </View>
+            <Text style={styles.categoryTitle}>Photographers</Text>
           </TouchableOpacity>
 
-          {/* Places Card */}
           <TouchableOpacity
             style={styles.categoryCard}
             onPress={() => navigation.navigate("PlaceListScreen")}
           >
-            <LinearGradient
-              colors={['#c1b7cd', '#2a1542']}
-              style={styles.categoryGradient}
-            >
-              <View style={styles.categoryIconContainer}>
-                <Image
-                  source={require('../../assets/images/ic_place.webp')}
-                  style={styles.placeCardImage}
-                />
-              </View>
-              <Text style={styles.categoryTitle}>Places</Text>
-              <Text style={styles.categoryCount}>{data.places.length}</Text>
-            </LinearGradient>
+            <View style={styles.categoryIconContainer}>
+              <Image
+                source={require('../../assets/images/ic_place.webp')}
+                style={styles.categoryIcon}
+              />
+            </View>
+            <Text style={styles.categoryTitle}>Places</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.categoryCard}
+            onPress={() => navigation.navigate("MoreScreen")}
+          >
+            <View style={styles.categoryIconContainer}>
+              <Image
+                source={require('../../assets/images/ic_more_home.webp')}
+                style={styles.categoryIcon}
+              />
+            </View>
+            <Text style={styles.categoryTitle}>More</Text>
           </TouchableOpacity>
         </View>
 
-        {/* TOP PLACES SECTION */}
+        {/* TOP PLACES SECTION - New Improved Style */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleContainer}>
-              <Ionicons name="star" size={20} color="#FFD700" />
+              <Ionicons name="star" size={22} color="#FFD700" />
               <Text style={styles.sectionTitle}>Top Rated Places</Text>
             </View>
             <TouchableOpacity onPress={() => navigation.navigate("TopPlacesScreen")}>
-              <Text style={styles.seeAllText}>See All</Text>
+              <Text style={styles.seeAllText}>See All →</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Horizontal scroll of top places */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {data.topPlaces.length > 0 ? (
-              data.topPlaces.map((place) => (
-                <TouchableOpacity
-                  key={place.id}
-                  style={styles.placeCardSmall}
-                  onPress={() => {
-                    setSelectedPlace(place);
-                    setPlaceModal(true);
-                  }}
-                >
-                  {place.featuredImage ? (
-                    <Image
-                      source={{ uri: getImageUrl(place.featuredImage) }}
-                      style={styles.placeCardImage}
-                    />
-                  ) : (
-                    <LinearGradient
-                      colors={['#2c5a73', '#1e3c4f']}
-                      style={styles.placeCardImagePlaceholder}
-                    >
-                      <Ionicons name="image-outline" size={24} color="#fff" />
-                    </LinearGradient>
-                  )}
-                  <LinearGradient
-                    colors={['transparent', 'rgba(0,0,0,0.7)']}
-                    style={styles.placeCardOverlay}
-                  >
-                    <Text style={styles.placeCardName}>{place.placeName}</Text>
-                    <View style={styles.placeCardRating}>
-                      <Ionicons name="star" size={10} color="#FFD700" />
-                      <Text style={styles.placeCardRatingText}>{place.rating?.toFixed(1) || '0.0'}</Text>
-                    </View>
-                    <Text style={styles.placeCardLocation}>{place.city}</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              ))
+              data.topPlaces.map(place => renderTopPlaceCard(place))
             ) : (
               <View style={styles.emptyCard}>
+                <Ionicons name="location-outline" size={30} color="#94a3b8" />
                 <Text style={styles.emptyText}>No top places found</Text>
               </View>
             )}
           </ScrollView>
         </View>
 
-        {/* TOP GUIDERS SECTION */}
+        {/* TOP GUIDERS SECTION - Original Style */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleContainer}>
-              <Ionicons name="people" size={20} color="#3B82F6" />
+              <Ionicons name="people" size={22} color="#3B82F6" />
               <Text style={styles.sectionTitle}>Top Tour Guides</Text>
             </View>
             <TouchableOpacity onPress={() => navigation.navigate("TopGuidersScreen")}>
-              <Text style={styles.seeAllText}>See All</Text>
+              <Text style={styles.seeAllText}>See All →</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Horizontal scroll of top guides */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {data.topGuiders.length > 0 ? (
-              data.topGuiders.map((guider) => (
-                <TouchableOpacity
-                  key={guider.id}
-                  style={styles.personCardSmall}
-                  onPress={() => {
-                    setSelectedGuider(guider);
-                    setGuiderModal(true);
-                  }}
-                >
-                  {guider.featuredImage ? (
-                    <Image
-                      source={{ uri: getImageUrl(guider.featuredImage) }}
-                      style={styles.personCardImage}
-                    />
-                  ) : (
-                    <View style={[styles.personCardImage, styles.personImagePlaceholder]}>
-                      <Text style={styles.personInitial}>
-                        {guider.firmName?.charAt(0) || guider.name?.charAt(0) || 'G'}
-                      </Text>
-                    </View>
-                  )}
-                  <Text style={styles.personCardName} numberOfLines={1}>
-                    {guider.firmName || guider.name || 'Guide'}
-                  </Text>
-                  <View style={styles.personCardRating}>
-                    <Ionicons name="star" size={10} color="#FFD700" />
-                    <Text style={styles.personCardRatingText}>{guider.rating?.toFixed(1) || '0.0'}</Text>
-                  </View>
-                </TouchableOpacity>
-              ))
+              data.topGuiders.map(guider => renderPersonCard(guider, 'guider'))
             ) : (
               <View style={styles.emptyCard}>
+                <Ionicons name="people-outline" size={30} color="#94a3b8" />
                 <Text style={styles.emptyText}>No top guides found</Text>
               </View>
             )}
           </ScrollView>
         </View>
 
-        {/* TOP PHOTOGRAPHERS SECTION */}
+        {/* TOP PHOTOGRAPHERS SECTION - Original Style */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleContainer}>
-              <Ionicons name="camera" size={20} color="#8B5CF6" />
+              <Ionicons name="camera" size={22} color="#8B5CF6" />
               <Text style={styles.sectionTitle}>Top Photographers</Text>
             </View>
             <TouchableOpacity onPress={() => navigation.navigate("TopPhotographers")}>
-              <Text style={styles.seeAllText}>See All</Text>
+              <Text style={styles.seeAllText}>See All →</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Horizontal scroll of top photographers */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {data.topPhotographers.length > 0 ? (
-              data.topPhotographers.map((photographer) => (
-                <TouchableOpacity
-                  key={photographer.id}
-                  style={styles.personCardSmall}
-                  onPress={() => {
-                    setSelectedPhotographer(photographer);
-                    setPhotographerModal(true);
-                  }}
-                >
-                  {photographer.featuredImage ? (
-                    <Image
-                      source={{ uri: getImageUrl(photographer.featuredImage) }}
-                      style={styles.personCardImage}
-                    />
-                  ) : (
-                    <View style={[styles.personCardImage, styles.personImagePlaceholder]}>
-                      <Text style={styles.personInitial}>
-                        {photographer.firmName?.charAt(0) || photographer.name?.charAt(0) || 'P'}
-                      </Text>
-                    </View>
-                  )}
-                  <Text style={styles.personCardName} numberOfLines={1}>
-                    {photographer.firmName || photographer.name || 'Photographer'}
-                  </Text>
-                  <View style={styles.personCardRating}>
-                    <Ionicons name="star" size={10} color="#FFD700" />
-                    <Text style={styles.personCardRatingText}>{photographer.rating?.toFixed(1) || '0.0'}</Text>
-                  </View>
-                </TouchableOpacity>
-              ))
+              data.topPhotographers.map(photographer => renderPersonCard(photographer, 'photographer'))
             ) : (
               <View style={styles.emptyCard}>
+                <Ionicons name="camera-outline" size={30} color="#94a3b8" />
                 <Text style={styles.emptyText}>No top photographers found</Text>
               </View>
             )}
@@ -1108,7 +1060,6 @@ export default function UserDashboard({ navigation }) {
         <View style={{ height: 40 }} />
       </ScrollView>
 
-      {/* Modals - only for other sections */}
       {renderPlaceModal()}
       {renderGuiderModal()}
       {renderPhotographerModal()}
@@ -1166,7 +1117,7 @@ const styles = StyleSheet.create({
     gap: 16,
   },
 
-  // Featured Carousel Styles - NON-CLICKABLE
+  // Featured Carousel Styles
   featuredCarouselWrapper: {
     height: 240,
     marginTop: 12,
@@ -1202,56 +1153,21 @@ const styles = StyleSheet.create({
     right: 0,
     padding: 20,
   },
-  featuredCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
   featuredCardTitle: {
     color: '#fff',
     fontSize: 22,
     fontWeight: 'bold',
-  },
-  featuredCardRating: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
-  },
-  featuredCardRatingText: {
-    color: '#FFD700',
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginLeft: 4,
+    marginBottom: 6,
   },
   featuredCardLocation: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
   },
   featuredCardLocationText: {
     color: '#fff',
     fontSize: 14,
     marginLeft: 6,
     opacity: 0.9,
-  },
-  featuredCardBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2c5a73',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 25,
-    alignSelf: 'flex-start',
-  },
-  featuredCardBadgeText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-    marginRight: 6,
   },
   paginationWrapper: {
     flexDirection: 'row',
@@ -1266,101 +1182,66 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
   },
 
-  // Modern Search Bar
-  searchWrapper: {
+  // Category Cards
+  categoryContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    marginBottom: 24,
-    marginTop: 8,
+    marginVertical: 20,
   },
-  searchGradient: {
+  categoryCard: {
+    alignItems: 'center',
+    width: (SCREEN_WIDTH - 48) / 4,
+  },
+  categoryIconContainer: {
+    width: 60,
+    height: 60,
     borderRadius: 30,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
     elevation: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
   },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-  },
-  searchInput: {
-    flex: 1,
-    marginLeft: 10,
-    fontSize: 15,
-    color: '#1e293b',
-  },
-  clearBtn: {
-    padding: 4,
-  },
-
-  // Category Cards
-  categoryContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    marginBottom: 28,
-    gap: 12,
-  },
-  categoryCard: {
-    flex: 1,
-    borderRadius: 20,
-    overflow: 'hidden',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-  },
-  categoryGradient: {
-    padding: 16,
-    alignItems: 'center',
-  },
-  categoryIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
+  categoryIcon: {
+    width: 40,
+    height: 40,
+    resizeMode: 'contain',
   },
   categoryTitle: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
-    color: '#fff',
-    marginBottom: 2,
+    color: '#2c5a73',
     textAlign: 'center',
-  },
-  categoryCount: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#fff',
-    opacity: 0.9,
   },
 
   // Section Styles
   section: {
-    marginBottom: 28,
+    marginBottom: 24,
+
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    marginBottom: 12,
+    marginBottom: 16,
+    
   },
   sectionTitleContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
+   
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '700',
     color: '#1e293b',
-    marginLeft: 8,
   },
   seeAllText: {
     fontSize: 14,
@@ -1368,61 +1249,75 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Place Card Small
-  placeCardSmall: {
-    width: 140,
-    height: 160,
-    marginLeft: 16,
+  // Top Place Card Styles (New Improved)
+  topPlaceCard: {
+    width: 175,
+    marginLeft: 15,
     borderRadius: 16,
     overflow: 'hidden',
-    elevation: 3,
+    backgroundColor: '#fff',
+    elevation: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
+     marginBottom:20,
+     gap:5
   },
-  placeCardImage: {
+  topPlaceImageContainer: {
+    width: '100%',
+    height: 150,
+    position: 'relative',
+  },
+  topPlaceImage: {
     width: '100%',
     height: '100%',
   },
-  placeCardImagePlaceholder: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  placeCardOverlay: {
+  topPlaceGradient: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    padding: 10,
-    paddingTop: 30,
+    height: 60,
   },
-  placeCardName: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginBottom: 4,
-  },
-  placeCardRating: {
+  topPlaceBadge: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 2,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
   },
-  placeCardRatingText: {
-    color: '#fff',
+  topPlaceBadgeText: {
     fontSize: 11,
-    marginLeft: 2,
+    fontWeight: '600',
+    color: '#FFD700',
   },
-  placeCardLocation: {
-    color: '#fff',
-    fontSize: 10,
-    opacity: 0.9,
+  topPlaceInfo: {
+    padding: 12,
+  },
+  topPlaceName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1e293b',
+    marginBottom: 4,
+  },
+  topPlaceLocation: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  topPlaceLocationText: {
+    fontSize: 12,
+    color: '#64748b',
   },
 
-  // Person Card Small
-  personCardSmall: {
+  // Original Person Card Styles (for Guiders and Photographers)
+  personCardOriginal: {
     width: 110,
     marginLeft: 16,
     backgroundColor: '#fff',
@@ -1434,6 +1329,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
+    marginBottom: 10
   },
   personCardImage: {
     width: 60,
@@ -1441,12 +1337,12 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     marginBottom: 8,
   },
-  personImagePlaceholder: {
+  personImagePlaceholderOriginal: {
     backgroundColor: '#2c5a73',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  personInitial: {
+  personInitialOriginal: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
@@ -1468,10 +1364,17 @@ const styles = StyleSheet.create({
     marginLeft: 2,
   },
 
-  // Empty States
+  // Placeholder Styles
+  placeImagePlaceholder: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+  },
   emptyCard: {
     width: 200,
-    height: 100,
+    height: 150,
     marginLeft: 16,
     backgroundColor: '#f1f5f9',
     borderRadius: 16,
@@ -1481,6 +1384,7 @@ const styles = StyleSheet.create({
   emptyText: {
     color: '#94a3b8',
     fontSize: 14,
+    marginTop: 8,
   },
 
   // Modal Styles

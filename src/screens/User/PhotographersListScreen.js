@@ -224,7 +224,7 @@ export default function PhotographersListScreen({ navigation, route }) {
     if (path.startsWith("http")) return path;
     try {
       const filename = path.split("/").pop();
-      return `${BASE_URL}/Uploads/${filename}`;
+      return `${BASE_URL}/api/image/download/${filename}`;
     } catch (error) {
       return null;
     }

@@ -15,6 +15,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
+import { File } from "expo-file-system";
 import { AuthContext } from "../../context/AuthContext";
 import { LocationContext } from "../../context/LocationContext";
 import api from "../../api/apiClient";
@@ -23,13 +24,24 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 
 const BASE_URL = "https://localguider.sinfode.com";
 
+// 🔥 Get image URL from filename
+const getImageUrl = (path) => {
+  if (!path) return null;
+  if (path.startsWith("http")) return path;
+  try {
+    const filename = path.split("/").pop();
+    return `${BASE_URL}/api/image/download/${filename}`;
+  } catch (error) {
+    return null;
+  }
+};
+
 export default function ProfileUpdateScreen({ navigation }) {
-  const { user, updateProfile, refreshUserDean } = useContext(AuthContext);
+  const { user, refreshUserDean } = useContext(AuthContext);
   const { location } = useContext(LocationContext);
 
   /* 🔹 FORM STATE */
   const [loading, setLoading] = useState(false);
-  const [imageLoading, setImageLoading] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   
   const [form, setForm] = useState({
@@ -50,7 +62,13 @@ export default function ProfileUpdateScreen({ navigation }) {
   /* ✅ PREFILL DATA FROM USER CONTEXT */
   useEffect(() => {
     if (user) {
+      console.log("👤 User data:", user);
+      
+      // Get user ID from various possible fields
+      const userId = user.id || user.user_Id || user.userId;
+      
       setForm({
+        id: userId,
         name: user.name || "",
         phone: user.phone || "",
         email: user.email || "",
@@ -67,18 +85,6 @@ export default function ProfileUpdateScreen({ navigation }) {
     }
   }, [user, location]);
 
-  /* ✅ GET IMAGE URL */
-  const getImageUrl = (path) => {
-    if (!path) return null;
-    if (path.startsWith("http")) return path;
-    try {
-      const filename = path.split("/").pop();
-      return `${BASE_URL}/Uploads/${filename}`;
-    } catch (error) {
-      return null;
-    }
-  };
-
   /* ✅ PICK IMAGE FROM GALLERY */
   const pickImage = async () => {
     try {
@@ -89,22 +95,28 @@ export default function ProfileUpdateScreen({ navigation }) {
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.8,
-        base64: true,
+        quality: 0.5, // Reduce quality to 50% to avoid network errors
+        base64: false, // Don't use base64 for better performance
       });
 
       if (!result.canceled && result.assets[0]) {
+        console.log("📸 Image selected:", result.assets[0].uri);
+        
+        // Get file info using new File API (optional)
+        try {
+          const file = new File(result.assets[0].uri);
+          const fileInfo = await file.info();
+          console.log("📸 File size:", fileInfo.size, "bytes");
+        } catch (infoError) {
+          console.log("Could not get file info, continuing anyway");
+        }
+        
         setForm({
           ...form,
-          profileImage: {
-            uri: result.assets[0].uri,
-            type: result.assets[0].mimeType || 'image/jpeg',
-            name: `profile_${Date.now()}.jpg`,
-            base64: result.assets[0].base64,
-          },
+          profileImage: result.assets[0],
           profileImageUrl: result.assets[0].uri,
         });
       }
@@ -114,34 +126,7 @@ export default function ProfileUpdateScreen({ navigation }) {
     }
   };
 
-  /* ✅ UPDATE PROFILE PICTURE */
-  const updateProfilePicture = async () => {
-    if (!form.profileImage) return;
-
-    try {
-      setImageLoading(true);
-      
-      const formData = new FormData();
-      formData.append("userId", user.id.toString());
-      formData.append("profilePicture", form.profileImage);
-
-      const response = await api.post(API.UPDATE_PROFILE_PICTURE, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-
-      if (response.data?.status) {
-        Alert.alert("Success", "Profile picture updated successfully");
-        await refreshUserDean();
-      }
-    } catch (error) {
-      console.error("Profile picture update error:", error);
-      Alert.alert("Error", "Failed to update profile picture");
-    } finally {
-      setImageLoading(false);
-    }
-  };
-
-  /* ✅ UPDATE PROFILE */
+  /* ✅ UPDATE PROFILE WITH IMAGE - FIXED FOR ANDROID */
   const handleUpdate = async () => {
     if (!form.name.trim()) {
       Alert.alert("Validation Error", "Name is required");
@@ -156,39 +141,163 @@ export default function ProfileUpdateScreen({ navigation }) {
     try {
       setLoading(true);
 
-      // First update profile picture if changed
-      if (form.profileImage) {
-        await updateProfilePicture();
+      const userId = user?.id || user?.user_Id || user?.userId;
+      
+      if (!userId) {
+        Alert.alert("Error", "User ID not found. Please login again.");
+        return;
       }
 
-      // Then update profile data
-      const updateData = {
-        userId: user.id,
-        name: form.name.trim(),
-        phone: form.phone.trim() || null,
-        email: form.email.trim() || null,
-        username: form.username.trim() || null,
-        countryCode: form.countryCode,
-        address: form.address.trim() || null,
-        gender: form.gender || null,
-        dob: form.dob || null,
-        latitude: form.latitude ? parseFloat(form.latitude) : null,
-        longitude: form.longitude ? parseFloat(form.longitude) : null,
-      };
+      console.log("📝 Updating user with ID:", userId);
 
-      const response = await api.post(API.UPDATE_PROFILE, updateData);
+      // ✅ Create FormData for multipart/form-data
+      const formData = new FormData();
+      
+      // Add all text fields
+      formData.append("userId", userId.toString());
+      if (form.name) formData.append("name", form.name);
+      if (form.phone) formData.append("phone", form.phone);
+      if (form.email) formData.append("email", form.email);
+      if (form.username) formData.append("username", form.username);
+      if (form.countryCode) formData.append("countryCode", form.countryCode);
+      if (form.address) formData.append("address", form.address);
+      if (form.gender) formData.append("gender", form.gender);
+      if (form.dob) formData.append("dob", form.dob);
+      if (form.latitude) formData.append("latitude", form.latitude);
+      if (form.longitude) formData.append("longitude", form.longitude);
 
-      if (response.data?.status) {
+      // ✅ Add profile image if selected - CORRECT FORMAT FOR ANDROID
+      if (form.profileImage) {
+        const imageUri = form.profileImage.uri;
+        
+        // Get filename from URI
+        const filename = imageUri.split('/').pop() || `profile_${Date.now()}.jpg`;
+        
+        // Get correct MIME type
+        const mimeType = form.profileImage.mimeType || 
+                        (filename.endsWith('.png') ? 'image/png' : 'image/jpeg');
+        
+        // ✅ CRITICAL: Correct format for Android - must have uri, type, name
+        const fileObject = {
+          uri: imageUri,
+          type: mimeType,
+          name: filename,
+        };
+        
+        console.log("📸 File object:", fileObject);
+        formData.append("profile", fileObject);
+      }
+
+      console.log("📤 Sending update request with FormData");
+
+      // ✅ IMPORTANT: Do NOT set Content-Type header manually!
+      // Let axios set it with the correct boundary parameter
+      const response = await api.post(API.UPDATE_PROFILE, formData, {
+        headers: {
+          'Accept': 'application/json',
+          // 'Content-Type' is intentionally omitted - axios will set it with boundary
+        },
+        timeout: 60000, // 60 second timeout for large files
+      });
+
+      console.log("✅ Update Response:", response.data);
+
+      if (response.data?.status === true) {
         Alert.alert("Success", "Profile updated successfully", [
           { text: "OK", onPress: () => navigation.goBack() }
         ]);
-        await refreshUserDean();
+        
+        // Refresh user data
+        if (refreshUserDean) {
+          await refreshUserDean();
+        }
       } else {
         Alert.alert("Error", response.data?.message || "Profile update failed");
       }
     } catch (err) {
-      console.error("Update error:", err);
-      Alert.alert("Error", err.response?.data?.message || "Profile update failed");
+      console.error("❌ Update error:", err);
+      
+      if (err.response) {
+        // Server responded with error
+        console.error("❌ Error response data:", err.response.data);
+        console.error("❌ Error response status:", err.response.status);
+        Alert.alert("Error", err.response.data?.message || "Server error");
+      } else if (err.request) {
+        // Request was made but no response
+        console.error("❌ No response received");
+        Alert.alert(
+          "Network Error", 
+          "Could not connect to server. Please check your internet connection and try again."
+        );
+      } else {
+        // Something else happened
+        console.error("❌ Error message:", err.message);
+        Alert.alert("Error", err.message || "Something went wrong");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* ✅ UPDATE PROFILE PICTURE ONLY - FIXED FOR ANDROID */
+  const updateProfilePictureOnly = async () => {
+    if (!form.profileImage) {
+      Alert.alert("Error", "Please select an image first");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const userId = user?.id || user?.user_Id || user?.userId;
+      
+      if (!userId) {
+        Alert.alert("Error", "User ID not found");
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("userId", userId.toString());
+      
+      const imageUri = form.profileImage.uri;
+      const filename = imageUri.split('/').pop() || `profile_${Date.now()}.jpg`;
+      const mimeType = form.profileImage.mimeType || 
+                      (filename.endsWith('.png') ? 'image/png' : 'image/jpeg');
+      
+      // ✅ CRITICAL: Correct format for Android
+      const fileObject = {
+        uri: imageUri,
+        type: mimeType,
+        name: filename,
+      };
+      
+      formData.append("profile", fileObject);
+
+      console.log("📸 Updating profile picture only");
+
+      // ✅ IMPORTANT: No manual Content-Type header
+      const response = await api.post(API.UPDATE_PROFILE_PICTURE, formData, {
+        headers: {
+          'Accept': 'application/json',
+        },
+        timeout: 60000,
+      });
+
+      console.log("✅ Profile picture update response:", response.data);
+
+      if (response.data?.status === true) {
+        Alert.alert("Success", "Profile picture updated successfully");
+        if (refreshUserDean) {
+          await refreshUserDean();
+        }
+        // Clear the selected image after successful upload
+        setForm({ ...form, profileImage: null });
+      } else {
+        Alert.alert("Error", response.data?.message || "Failed to update profile picture");
+      }
+    } catch (err) {
+      console.error("❌ Profile picture update error:", err);
+      Alert.alert("Error", "Failed to update profile picture");
     } finally {
       setLoading(false);
     }
@@ -257,7 +366,7 @@ export default function ProfileUpdateScreen({ navigation }) {
       >
         {/* 🖼️ PROFILE IMAGE SECTION */}
         <View style={styles.imageSection}>
-          <TouchableOpacity onPress={pickImage} style={styles.imageContainer}>
+          <TouchableOpacity onPress={pickImage} style={styles.imageContainer} disabled={loading}>
             {form.profileImageUrl ? (
               <Image
                 source={{ uri: form.profileImageUrl }}
@@ -273,6 +382,22 @@ export default function ProfileUpdateScreen({ navigation }) {
             </View>
           </TouchableOpacity>
           <Text style={styles.imageHint}>Tap to change profile picture</Text>
+          {form.profileImage && (
+            <Text style={styles.imageNote}>✓ New photo selected</Text>
+          )}
+          
+          {/* Separate buttons for profile update options */}
+          {form.profileImage && (
+            <View style={styles.imageActionRow}>
+              <TouchableOpacity 
+                style={styles.imageActionButton}
+                onPress={updateProfilePictureOnly}
+                disabled={loading}
+              >
+                <Text style={styles.imageActionText}>Update Photo Only</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
         {/* 📝 FORM CARD */}
@@ -322,6 +447,7 @@ export default function ProfileUpdateScreen({ navigation }) {
             onChangeText={(text) => setForm({ ...form, email: text })}
             icon="mail-outline"
             keyboard="email-address"
+            autoCapitalize="none"
           />
 
           {/* Gender Selection */}
@@ -403,7 +529,9 @@ export default function ProfileUpdateScreen({ navigation }) {
                 {loading ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
-                  <Text style={styles.updateBtnText}>Update Profile</Text>
+                  <Text style={styles.updateBtnText}>
+                    {form.profileImage ? "Update All" : "Update Profile"}
+                  </Text>
                 )}
               </LinearGradient>
             </TouchableOpacity>
@@ -527,6 +655,27 @@ const styles = StyleSheet.create({
   imageHint: {
     fontSize: 12,
     color: "#64748b",
+  },
+  imageNote: {
+    fontSize: 11,
+    color: "#10B981",
+    marginTop: 4,
+    fontWeight: "500",
+  },
+  imageActionRow: {
+    flexDirection: "row",
+    marginTop: 8,
+  },
+  imageActionButton: {
+    backgroundColor: "#2c5a73",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  imageActionText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
   },
   card: {
     backgroundColor: "#fff",
