@@ -26,7 +26,7 @@ const BASE_URL = "https://localguider.sinfode.com";
 // ✅ FIXED: Allowed ID proof types from backend - matches allowedGovtIdTypes
 const ID_PROOF_TYPES = [
   "Aadhaar",
-  "PAN Card",
+  "PAN",
   "Voter ID",
   "Driving License",
   "Passport"

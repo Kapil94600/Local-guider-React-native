@@ -22,6 +22,7 @@ import PlaceListScreen from "../screens/User/PlaceListScreen.js";
 import TopPlacesScreen from "../screens/User/TopPlacesScreen.js";
 import TopGuidersScreen from "../screens/User/TopGuidersScreen.js";
 import NotificationsScreen from "../screens/notifications/NotificationsScreen";
+import PlaceDetailsScreen from "../screens/User/PlaceDetailsScreen.js";
 
 import TransactionHistory from "../screens/User/TransactionHistory";
 import MyBookings from "../screens/User/MyBookings";
@@ -31,7 +32,6 @@ import HelpSupport from "../screens/User/HelpSupport";
 import FindTourGuides from "../screens/User/FindTourGuides";
 import FindPhotographers from "../screens/User/FindPhotographers";
 import ExplorePlaces from "../screens/User/ExplorePlaces";
-
 
 // For admin
 
@@ -46,8 +46,7 @@ import PhotographersListScreen from "../screens/User/PhotographersListScreen";
 /* 🎭 ROLES - ADD THESE SCREENS */
 import RoleRequestScreen from "../screens/RoleRequestScreen";
 import GuiderRequestScreen from "../screens/User/GuiderRequestScreen";
-import PhotographerRequest from "../screens/User/PhotographerRequest";  // ✅ ADD THIS
-// import PhotographerRequestScreen from "../screens/User/PhotographerRequestScreen"; // ✅ ADD THIS
+import PhotographerRequest from "../screens/User/PhotographerRequest";
 import GuiderDashboard from "../screens/GuiderDashboard";
 import PhotographerDashboard from "../screens/PhotographerDashboard";
 
@@ -113,38 +112,41 @@ export default function AppNavigator() {
               name="PhotographersListScreen"
               component={PhotographersListScreen}
             />
+
+            {/* ✅ FIXED: Changed from "PlaceDetailsScreen" to "PlaceDetails" */}
+            <Stack.Screen
+              name="PlaceDetails"
+              component={PlaceDetailsScreen}
+            />
+            
             <Stack.Screen
               name="PlaceListScreen"
               component={PlaceListScreen}
             />
-             <Stack.Screen
+            <Stack.Screen
               name="TopPlacesScreen"
               component={TopPlacesScreen}
             />
-              <Stack.Screen
+            <Stack.Screen
               name="TopGuidersScreen"
               component={TopGuidersScreen}
             />
+            
             {/* 💰 WALLET */}
             <Stack.Screen name="AddBalance" component={AddBalanceScreen} />
 
-            {/* 🎭 ROLE REQUEST - ADD THESE SCREENS */}
+            {/* 🎭 ROLE REQUEST */}
             <Stack.Screen name="RoleRequest" component={RoleRequestScreen} />
             <Stack.Screen
               name="GuiderRequestScreen"
               component={GuiderRequestScreen}
-              options={{ title: "Become a Guider", headerShown: false }} // ✅ ADD THIS
+              options={{ title: "Become a Guider", headerShown: false }}
             />
             <Stack.Screen
               name="PhotographerRequest"
               component={PhotographerRequest}
-              options={{ title: "Become a Guider", headerShown: false }} // ✅ ADD THIS
+              options={{ title: "Become a Photographer", headerShown: false }}
             />
-            {/* <Stack.Screen 
-              name="PhotographerRequestScreen" 
-              component={PhotographerRequestScreen} 
-              options={{ title: "Become a Photographer", headerShown: true }} // ✅ ADD THIS
-            /> */}
 
             {/* ☎️ CONTACT */}
             <Stack.Screen name="ContactUs" component={ContactUsScreen} />
@@ -156,57 +158,49 @@ export default function AppNavigator() {
               component={LocationSearchScreen}
             />
             <Stack.Screen name="MapSelect" component={MapSelectScreen} />
-<Stack.Screen name="Notifications" component={NotificationsScreen} />
-<Stack.Screen 
-  name="MyBookings" 
-  component={MyBookings} 
-  options={{ headerShown: false }}
-/>
-<Stack.Screen 
-  name="TransactionHistory" 
-  component={TransactionHistory} 
-  options={{ headerShown: false }}
-/>
-<Stack.Screen 
-  name="AboutUs" 
-  component={AboutUs} 
-  options={{ headerShown: false }}
-/>
-<Stack.Screen 
-  name="TermsConditions" 
-  component={TermsConditions} 
-  options={{ headerShown: false }}
-/>
-<Stack.Screen 
-  name="HelpSupport" 
-  component={HelpSupport} 
-  options={{ headerShown: false }}
-/>
-
-<Stack.Screen 
-  name="FindTourGuides" 
-  component={FindTourGuides} 
-  options={{ headerShown: false }}
-/>
-
-<Stack.Screen 
-  name="FindPhotographers" 
-  component={FindPhotographers} 
-  options={{ headerShown: false }}
-/>
-
-<Stack.Screen 
-  name="ExplorePlaces" 
-  component={ExplorePlaces} 
-  options={{ headerShown: false }}
-/>
-
-
-            {/* 📸 PHOTOGRAPHERS LIST */}
-            {/* <Stack.Screen
-              name="PhotographersList"
-              component={PhotographersListScreen}
-            /> */}
+            
+            <Stack.Screen name="Notifications" component={NotificationsScreen} />
+            
+            <Stack.Screen 
+              name="MyBookings" 
+              component={MyBookings} 
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen 
+              name="TransactionHistory" 
+              component={TransactionHistory} 
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen 
+              name="AboutUs" 
+              component={AboutUs} 
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen 
+              name="TermsConditions" 
+              component={TermsConditions} 
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen 
+              name="HelpSupport" 
+              component={HelpSupport} 
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen 
+              name="FindTourGuides" 
+              component={FindTourGuides} 
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen 
+              name="FindPhotographers" 
+              component={FindPhotographers} 
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen 
+              name="ExplorePlaces" 
+              component={ExplorePlaces} 
+              options={{ headerShown: false }}
+            />
           </>
         )}
       </Stack.Navigator>

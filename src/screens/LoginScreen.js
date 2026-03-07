@@ -38,36 +38,60 @@ export default function LoginScreen({ navigation }) {
     const phoneRegex = /^[0-9]{10}$/;
     return phoneRegex.test(number);
   };
+const handleLogin = async () => {
+  if (!phone || !password) {
+    Alert.alert("Error", "Phone & password are required");
+    return;
+  }
 
-  const handleLogin = async () => {
-    if (!phone || !password) {
-      Alert.alert("Error", "Phone & password are required");
-      return;
-    }
+  if (!validatePhone(phone)) {
+    Alert.alert("Error", "Please enter a valid 10-digit phone number");
+    return;
+  }
 
-    if (!validatePhone(phone)) {
-      Alert.alert("Error", "Please enter a valid 10-digit phone number");
-      return;
-    }
+  try {
+    setLoading(true);
 
-    try {
-      setLoading(true);
-      const res = await api.post("/user/login", { phone, password });
-      
-      if (res.data.status) {
-        const userData = res.data.data;
-        const token = userData.token;
-        await AsyncStorage.setItem("token", token);
-        login({ ...userData, token });
-      } else {
-        Alert.alert("Login Failed", res.data.message);
+    const res = await api.post("/user/login", { phone, password });
+
+    if (res.data.status) {
+
+      const userData = res.data.data;
+      const token = userData.token;
+
+      await AsyncStorage.setItem("token", token);
+
+      const userId = userData?.id || userData?.user?.id;
+
+      if (userId) {
+        await AsyncStorage.setItem("userId", userId.toString());
       }
-    } catch (err) {
-      Alert.alert("Error", "Invalid phone or password");
-    } finally {
-      setLoading(false);
+
+      // 🔴 IMPORTANT ROLE CHECK
+      if (userData.photographer && userData.photographer.approvalStatus === "APPROVED") {
+
+        login({ ...userData, role: "photographer", token });
+
+      } else if (userData.guider && userData.guider.approvalStatus === "APPROVED") {
+
+        login({ ...userData, role: "guider", token });
+
+      } else {
+
+        login({ ...userData, role: "user", token });
+
+      }
+
+    } else {
+      Alert.alert("Login Failed", res.data.message);
     }
-  };
+
+  } catch (err) {
+    Alert.alert("Error", "Invalid phone or password");
+  } finally {
+    setLoading(false);
+  }
+};
 
   // ✅ Handle Forget Password
   const handleForgetPassword = async () => {

@@ -692,10 +692,10 @@ export default function PhotographersListScreen({ navigation, route }) {
           ) : null}
         </View>
 
-        {/* Results Count */}
+        {/* Results Count
         <Text style={styles.resultsCount}>
           {filteredPhotographers.length} photographers found
-        </Text>
+        </Text> */}
       </LinearGradient>
 
       {/* Photographers List */}

@@ -14,6 +14,8 @@ import {
   Modal,
   Dimensions,
   Animated,
+  Linking,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -64,7 +66,7 @@ const FEATURED_IMAGES = [
     id: 6,
     source: require("../../assets/images/place4.jpg"),
     title: "Ladakh",
-    location: "Ladakh (Leh–Manali Highway Region)",
+    location: "Ladakh",
   },
   {
     id: 7,
@@ -110,7 +112,7 @@ const PlaceImage = ({ imagePath, style }) => {
       setLoading(false);
       return;
     }
-    
+
     const url = getImageUrl(imagePath);
     setImageUrl(url);
     setLoading(false);
@@ -139,6 +141,113 @@ const PlaceImage = ({ imagePath, style }) => {
       onError={() => setError(true)}
       resizeMode="cover"
     />
+  );
+};
+
+// 🆕 Rating Stars Component - Centered
+const RatingStars = ({ rating, size = 12 }) => {
+  const stars = [];
+  const fullStars = Math.floor(rating || 0);
+  const hasHalf = (rating || 0) % 1 >= 0.5;
+
+  for (let i = 0; i < 5; i++) {
+    if (i < fullStars) {
+      stars.push(<Ionicons key={i} name="star" size={size} color="#FFD700" />);
+    } else if (i === fullStars && hasHalf) {
+      stars.push(<Ionicons key={i} name="star-half" size={size} color="#FFD700" />);
+    } else {
+      stars.push(<Ionicons key={i} name="star-outline" size={size} color="#FFD700" />);
+    }
+  }
+  return (
+    <View style={styles.ratingStarsContainer}>
+      {stars}
+      <Text style={[styles.ratingValue, { fontSize: size - 2 }]}>
+        ({rating?.toFixed(1) || '0.0'})
+      </Text>
+    </View>
+  );
+};
+
+// 🆕 New Card Component for Top Guiders & Photographers (with centered details)
+const TopGuiderPhotographerCard = ({ item, type, onPress }) => {
+  // Get profile image from multiple possible fields
+  const getProfileImage = () => {
+    return item.featuredImage || item.profileImage || item.avatar;
+  };
+
+  // Get name based on type
+  const getName = () => {
+    if (type === 'guider') {
+      return item.firmName || item.name || 'Tour Guide';
+    } else {
+      return item.firmName || item.name || 'Photographer';
+    }
+  };
+
+  // ✅ Get location - only city/district name
+  const getLocation = () => {
+    if (item.city) return item.city;
+    if (item.state) return item.state;
+    if (item.placeName) {
+      const parts = item.placeName.split(',');
+      return parts[0].trim();
+    }
+    return 'Local';
+  };
+
+  // Get rating
+  const getRating = () => {
+    return item.rating || 0;
+  };
+
+  return (
+    <TouchableOpacity
+      style={styles.topGuiderCard}
+      onPress={onPress}
+      activeOpacity={0.9}
+    >
+      <View style={styles.topGuiderImageContainer}>
+        {getProfileImage() ? (
+          <Image
+            source={{ uri: getImageUrl(getProfileImage()) }}
+            style={styles.topGuiderImage}
+            resizeMode="cover"
+          />
+        ) : (
+          <LinearGradient
+            colors={type === 'guider' ? ['#3B82F6', '#1E40AF'] : ['#8B5CF6', '#6D28D9']}
+            style={styles.topGuiderImagePlaceholder}
+          >
+            <Text style={styles.topGuiderInitial}>
+              {getName().charAt(0).toUpperCase()}
+            </Text>
+          </LinearGradient>
+        )}
+      </View>
+
+      <View style={styles.topGuiderInfo}>
+        <Text style={styles.topGuiderName} numberOfLines={1}>
+          {getName()}
+        </Text>
+        
+        <View style={styles.topGuiderLocation}>
+          <Ionicons name="location-outline" size={10} color="#94a3b8" />
+          <Text style={styles.topGuiderLocationText} numberOfLines={1}>
+            {getLocation()}
+          </Text>
+        </View>
+
+        <RatingStars rating={getRating()} size={10} />
+
+        {item.verified && (
+          <View style={styles.topGuiderVerified}>
+            <Ionicons name="checkmark-circle" size={10} color="#10B981" />
+            <Text style={styles.topGuiderVerifiedText}>Verified</Text>
+          </View>
+        )}
+      </View>
+    </TouchableOpacity>
   );
 };
 
@@ -433,21 +542,97 @@ export default function UserDashboard({ navigation }) {
     return "Select location";
   };
 
-  const renderRating = (rating) => {
+  const renderRating = (rating, size = 14) => {
     const stars = [];
     const fullStars = Math.floor(rating || 0);
     const hasHalf = (rating || 0) % 1 >= 0.5;
 
     for (let i = 0; i < 5; i++) {
       if (i < fullStars) {
-        stars.push(<Ionicons key={i} name="star" size={14} color="#FFD700" />);
+        stars.push(<Ionicons key={i} name="star" size={size} color="#FFD700" />);
       } else if (i === fullStars && hasHalf) {
-        stars.push(<Ionicons key={i} name="star-half" size={14} color="#FFD700" />);
+        stars.push(<Ionicons key={i} name="star-half" size={size} color="#FFD700" />);
       } else {
-        stars.push(<Ionicons key={i} name="star-outline" size={14} color="#FFD700" />);
+        stars.push(<Ionicons key={i} name="star-outline" size={size} color="#FFD700" />);
       }
     }
     return <View style={{ flexDirection: 'row' }}>{stars}</View>;
+  };
+
+  // Handle phone call
+  const handleCall = (phoneNumber) => {
+    if (!phoneNumber) {
+      Alert.alert("Error", "Phone number not available");
+      return;
+    }
+    
+    let phone = phoneNumber;
+    if (Platform.OS === 'android') {
+      phone = `tel:${phoneNumber}`;
+    } else {
+      phone = `telprompt:${phoneNumber}`;
+    }
+    
+    Linking.canOpenURL(phone)
+      .then(supported => {
+        if (supported) {
+          return Linking.openURL(phone);
+        } else {
+          Alert.alert("Error", "Phone call not supported");
+        }
+      })
+      .catch(err => console.log('Call error:', err));
+  };
+
+  // Handle WhatsApp
+  const handleWhatsApp = (phoneNumber) => {
+    if (!phoneNumber) {
+      Alert.alert("Error", "WhatsApp number not available");
+      return;
+    }
+    
+    let phone = phoneNumber.replace(/[^0-9]/g, '');
+    const url = `whatsapp://send?phone=${phone}`;
+    
+    Linking.canOpenURL(url)
+      .then(supported => {
+        if (supported) {
+          return Linking.openURL(url);
+        } else {
+          Alert.alert("Error", "WhatsApp is not installed");
+        }
+      })
+      .catch(err => console.log('WhatsApp error:', err));
+  };
+
+  // Handle Email
+  const handleEmail = (email) => {
+    if (!email) {
+      Alert.alert("Error", "Email not available");
+      return;
+    }
+    
+    const url = `mailto:${email}`;
+    Linking.canOpenURL(url)
+      .then(supported => {
+        if (supported) {
+          return Linking.openURL(url);
+        } else {
+          Alert.alert("Error", "Email app not supported");
+        }
+      })
+      .catch(err => console.log('Email error:', err));
+  };
+
+  // Handle Booking
+  const handleBooking = (item, type) => {
+    if (type === 'guider') {
+      navigation.navigate("GuiderDetails", { guiderId: item.id });
+    } else if (type === 'photographer') {
+      navigation.navigate("PhotographerDetails", { photographerId: item.id });
+    } else {
+      navigation.navigate("PlaceDetails", { placeId: item.id });
+    }
   };
 
   // Featured Carousel
@@ -523,77 +708,78 @@ export default function UserDashboard({ navigation }) {
     </View>
   );
 
-  // Improved Top Places Card - New Style
-  const renderTopPlaceCard = (place) => (
-    <TouchableOpacity
-      key={place.id}
-      style={styles.topPlaceCard}
+  // ✅ UPDATED: Top Places Card with centered details and district/city location
+  const renderTopPlaceCard = (place) => {
+    const getPlaceLocation = () => {
+      if (place.city) return place.city;
+      if (place.state) return place.state;
+      if (place.location) return place.location;
+      return 'Unknown';
+    };
+
+    return (
+      <TouchableOpacity
+        key={place.id}
+        style={styles.topPlaceCard}
+        onPress={() => {
+          if (place?.id) {
+            navigation.navigate("PlaceDetails", { 
+              placeId: place.id,
+              placeName: place.placeName 
+            });
+          } else {
+            console.log("Place ID not found", place);
+            Alert.alert("Error", "Place details not available");
+          }
+        }}
+        activeOpacity={0.9}
+      >
+        <View style={styles.topPlaceImageContainer}>
+          <PlaceImage
+            imagePath={place.featuredImage}
+            style={styles.topPlaceImage}
+          />
+        </View>
+
+        <View style={styles.topPlaceInfo}>
+          <Text style={styles.topPlaceName} numberOfLines={1}>{place.placeName}</Text>
+          <View style={styles.topPlaceLocation}>
+            <Ionicons name="location-outline" size={10} color="#94a3b8" />
+            <Text style={styles.topPlaceLocationText} numberOfLines={1}>
+              {getPlaceLocation()}
+            </Text>
+          </View>
+          
+          <RatingStars rating={place.rating} size={10} />
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  // Top Guider Card
+  const renderTopGuiderCard = (guider) => (
+    <TopGuiderPhotographerCard
+      key={guider.id}
+      item={guider}
+      type="guider"
       onPress={() => {
-        setSelectedPlace(place);
-        setPlaceModal(true);
+        setSelectedGuider(guider);
+        setGuiderModal(true);
       }}
-      activeOpacity={0.9}
-    >
-      <View style={styles.topPlaceImageContainer}>
-        <PlaceImage
-          imagePath={place.featuredImage}
-          style={styles.topPlaceImage}
-        />
-        <LinearGradient
-          colors={['transparent', 'rgba(0,0,0,0.8)']}
-          style={styles.topPlaceGradient}
-        />
-        <View style={styles.topPlaceBadge}>
-          <Ionicons name="star" size={12} color="#FFD700" />
-          <Text style={styles.topPlaceBadgeText}>{place.rating?.toFixed(1) || 'New'}</Text>
-        </View>
-      </View>
-      
-      <View style={styles.topPlaceInfo}>
-        <Text style={styles.topPlaceName} numberOfLines={1}>{place.placeName}</Text>
-        <View style={styles.topPlaceLocation}>
-          <Ionicons name="location-outline" size={12} color="#2c5a73" />
-          <Text style={styles.topPlaceLocationText} numberOfLines={1}>{place.city}</Text>
-        </View>
-      </View>
-    </TouchableOpacity>
+    />
   );
 
-  // Original Person Card Style for Guiders and Photographers
-  const renderPersonCard = (person, type) => (
-    <TouchableOpacity
-      key={person.id}
-      style={styles.personCardOriginal}
+  // Top Photographer Card
+  const renderTopPhotographerCard = (photographer) => (
+    <TopGuiderPhotographerCard
+      key={photographer.id}
+      item={photographer}
+      type="photographer"
       onPress={() => {
-        if (type === 'guider') {
-          setSelectedGuider(person);
-          setGuiderModal(true);
-        } else {
-          setSelectedPhotographer(person);
-          setPhotographerModal(true);
-        }
+        setSelectedPhotographer(photographer);
+        setPhotographerModal(true);
       }}
-    >
-      {person.featuredImage ? (
-        <Image
-          source={{ uri: getImageUrl(person.featuredImage) }}
-          style={styles.personCardImage}
-        />
-      ) : (
-        <View style={[styles.personCardImage, styles.personImagePlaceholderOriginal]}>
-          <Text style={styles.personInitialOriginal}>
-            {person.firmName?.charAt(0) || person.name?.charAt(0) || (type === 'guider' ? 'G' : 'P')}
-          </Text>
-        </View>
-      )}
-      <Text style={styles.personCardName} numberOfLines={1}>
-        {person.firmName || person.name || (type === 'guider' ? 'Guide' : 'Photographer')}
-      </Text>
-      <View style={styles.personCardRating}>
-        <Ionicons name="star" size={10} color="#FFD700" />
-        <Text style={styles.personCardRatingText}>{person.rating?.toFixed(1) || '0.0'}</Text>
-      </View>
-    </TouchableOpacity>
+    />
   );
 
   // Place Details Modal
@@ -601,7 +787,7 @@ export default function UserDashboard({ navigation }) {
     <Modal
       visible={placeModal}
       transparent={true}
-      animationType="fade"
+      animationType="slide"
       onRequestClose={() => setPlaceModal(false)}
     >
       <BlurView intensity={20} style={StyleSheet.absoluteFill} />
@@ -610,59 +796,114 @@ export default function UserDashboard({ navigation }) {
         activeOpacity={1}
         onPress={() => setPlaceModal(false)}
       >
-        <View style={styles.modalContent}>
+        <View style={styles.modalContentLarge}>
           {selectedPlace && (
             <>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>{selectedPlace.placeName}</Text>
-                <TouchableOpacity onPress={() => setPlaceModal(false)}>
-                  <Ionicons name="close" size={24} color="#64748b" />
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>{selectedPlace.placeName}</Text>
+                  <TouchableOpacity onPress={() => setPlaceModal(false)} style={styles.modalCloseBtn}>
+                    <Ionicons name="close" size={24} color="#64748b" />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.modalImageContainer}>
+                  <PlaceImage
+                    imagePath={selectedPlace.featuredImage}
+                    style={styles.modalImageLarge}
+                  />
+                </View>
+
+                <View style={styles.modalRatingContainer}>
+                  {renderRating(selectedPlace.rating, 16)}
+                  <Text style={styles.modalRatingTextLarge}>({selectedPlace.rating?.toFixed(1) || '0.0'})</Text>
+                </View>
+
+                <View style={styles.modalInfoRow}>
+                  <Ionicons name="location-outline" size={18} color="#2c5a73" />
+                  <Text style={styles.modalInfoText}>
+                    {selectedPlace.city}{selectedPlace.state ? `, ${selectedPlace.state}` : ''}
+                    {selectedPlace.country ? `, ${selectedPlace.country}` : ''}
+                  </Text>
+                </View>
+
+                {selectedPlace.address && (
+                  <View style={styles.modalInfoRow}>
+                    <Ionicons name="home-outline" size={18} color="#2c5a73" />
+                    <Text style={styles.modalInfoText}>{selectedPlace.address}</Text>
+                  </View>
+                )}
+
+                <View style={styles.modalDivider} />
+
+                <Text style={styles.modalSectionTitle}>Description</Text>
+                <Text style={styles.modalDescription}>
+                  {selectedPlace.description || "No description available"}
+                </Text>
+
+                <View style={styles.modalDivider} />
+
+                <Text style={styles.modalSectionTitle}>Place Details</Text>
+                
+                <View style={styles.modalStatsGrid}>
+                  <View style={styles.modalStatItem}>
+                    <Ionicons name="time-outline" size={20} color="#2c5a73" />
+                    <Text style={styles.modalStatLabel}>Opening Hours</Text>
+                    <Text style={styles.modalStatValue}>{selectedPlace.openingHours || "Not specified"}</Text>
+                  </View>
+
+                  <View style={styles.modalStatItem}>
+                    <Ionicons name="cash-outline" size={20} color="#2c5a73" />
+                    <Text style={styles.modalStatLabel}>Entry Fee</Text>
+                    <Text style={styles.modalStatValue}>{selectedPlace.entryFee || "Free"}</Text>
+                  </View>
+
+                  <View style={styles.modalStatItem}>
+                    <Ionicons name="time-outline" size={20} color="#2c5a73" />
+                    <Text style={styles.modalStatLabel}>Best Time</Text>
+                    <Text style={styles.modalStatValue}>{selectedPlace.bestTime || "Anytime"}</Text>
+                  </View>
+
+                  <View style={styles.modalStatItem}>
+                    <Ionicons name="eye-outline" size={20} color="#2c5a73" />
+                    <Text style={styles.modalStatLabel}>Total Views</Text>
+                    <Text style={styles.modalStatValue}>{selectedPlace.views || 0}</Text>
+                  </View>
+                </View>
+
+                {selectedPlace.tags && selectedPlace.tags.length > 0 && (
+                  <>
+                    <View style={styles.modalDivider} />
+                    <Text style={styles.modalSectionTitle}>Tags</Text>
+                    <View style={styles.modalTagsContainer}>
+                      {selectedPlace.tags.map((tag, index) => (
+                        <View key={index} style={styles.modalTag}>
+                          <Text style={styles.modalTagText}>{tag}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </>
+                )}
+
+                <View style={styles.modalDivider} />
+              </ScrollView>
+
+              <View style={styles.modalButtonContainer}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonPrimary]}
+                  onPress={() => {
+                    setPlaceModal(false);
+                    navigation.navigate("PlaceDetails", { placeId: selectedPlace.id });
+                  }}
+                >
+                  <LinearGradient
+                    colors={["#2c5a73", "#1e3c4f"]}
+                    style={styles.modalButtonGradient}
+                  >
+                    <Text style={styles.modalButtonText}>View Full Details</Text>
+                  </LinearGradient>
                 </TouchableOpacity>
               </View>
-
-              <PlaceImage
-                imagePath={selectedPlace.featuredImage}
-                style={styles.modalImage}
-              />
-
-              <View style={styles.modalRating}>
-                {renderRating(selectedPlace.rating)}
-                <Text style={styles.modalRatingText}>({selectedPlace.rating?.toFixed(1) || '0.0'})</Text>
-              </View>
-
-              <View style={styles.modalLocation}>
-                <Ionicons name="location-outline" size={16} color="#2c5a73" />
-                <Text style={styles.modalLocationText}>
-                  {selectedPlace.city}, {selectedPlace.state}
-                </Text>
-              </View>
-
-              <Text style={styles.modalDescription}>
-                {selectedPlace.description || "No description available"}
-              </Text>
-
-              <View style={styles.modalStats}>
-                <View style={styles.modalStat}>
-                  <Ionicons name="eye-outline" size={18} color="#2c5a73" />
-                  <Text style={styles.modalStatValue}>{selectedPlace.views || 0}</Text>
-                  <Text style={styles.modalStatLabel}>Views</Text>
-                </View>
-              </View>
-
-              <TouchableOpacity
-                style={styles.modalButton}
-                onPress={() => {
-                  setPlaceModal(false);
-                  navigation.navigate("PlaceDetails", { placeId: selectedPlace.id });
-                }}
-              >
-                <LinearGradient
-                  colors={["#2c5a73", "#1e3c4f"]}
-                  style={styles.modalButtonGradient}
-                >
-                  <Text style={styles.modalButtonText}>View Full Details</Text>
-                </LinearGradient>
-              </TouchableOpacity>
             </>
           )}
         </View>
@@ -675,7 +916,7 @@ export default function UserDashboard({ navigation }) {
     <Modal
       visible={guiderModal}
       transparent={true}
-      animationType="fade"
+      animationType="slide"
       onRequestClose={() => setGuiderModal(false)}
     >
       <BlurView intensity={20} style={StyleSheet.absoluteFill} />
@@ -684,86 +925,208 @@ export default function UserDashboard({ navigation }) {
         activeOpacity={1}
         onPress={() => setGuiderModal(false)}
       >
-        <View style={styles.modalContent}>
+        <View style={styles.modalContentLarge}>
           {selectedGuider && (
             <>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>
-                  {selectedGuider.firmName || selectedGuider.name || "Tour Guide"}
-                </Text>
-                <TouchableOpacity onPress={() => setGuiderModal(false)}>
-                  <Ionicons name="close" size={24} color="#64748b" />
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.modalProfileHeader}>
-                {selectedGuider.featuredImage ? (
-                  <Image
-                    source={{ uri: getImageUrl(selectedGuider.featuredImage) }}
-                    style={styles.modalProfileImage}
-                  />
-                ) : (
-                  <LinearGradient
-                    colors={['#2c5a73', '#1e3c4f']}
-                    style={[styles.modalProfileImage, styles.modalImagePlaceholder]}
-                  >
-                    <Text style={styles.modalProfileInitial}>
-                      {selectedGuider.firmName?.charAt(0) || selectedGuider.name?.charAt(0) || 'G'}
-                    </Text>
-                  </LinearGradient>
-                )}
-
-                <View style={styles.modalRating}>
-                  {renderRating(selectedGuider.rating)}
-                  <Text style={styles.modalRatingText}>({selectedGuider.rating?.toFixed(1) || '0.0'})</Text>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>
+                    {selectedGuider.firmName || selectedGuider.name || "Tour Guide"}
+                  </Text>
+                  <TouchableOpacity onPress={() => setGuiderModal(false)} style={styles.modalCloseBtn}>
+                    <Ionicons name="close" size={24} color="#64748b" />
+                  </TouchableOpacity>
                 </View>
 
-                <View style={styles.modalLocation}>
-                  <Ionicons name="location-outline" size={16} color="#2c5a73" />
-                  <Text style={styles.modalLocationText}>
-                    {selectedGuider.placeName || "Local Guide"}
+                <View style={styles.modalProfileContainer}>
+                  {selectedGuider.featuredImage ? (
+                    <Image
+                      source={{ uri: getImageUrl(selectedGuider.featuredImage) }}
+                      style={styles.modalProfileImageLarge}
+                    />
+                  ) : (
+                    <LinearGradient
+                      colors={['#3B82F6', '#1E40AF']}
+                      style={styles.modalProfileImageLarge}
+                    >
+                      <Text style={styles.modalProfileInitialLarge}>
+                        {selectedGuider.firmName?.charAt(0) || selectedGuider.name?.charAt(0) || 'G'}
+                      </Text>
+                    </LinearGradient>
+                  )}
+
+                  <View style={styles.modalRatingContainer}>
+                    {renderRating(selectedGuider.rating, 16)}
+                    <Text style={styles.modalRatingTextLarge}>({selectedGuider.rating?.toFixed(1) || '0.0'})</Text>
+                  </View>
+
+                  {selectedGuider.verified && (
+                    <View style={styles.modalVerifiedBadgeLarge}>
+                      <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+                      <Text style={styles.modalVerifiedText}>Verified Guide</Text>
+                    </View>
+                  )}
+                </View>
+
+                <View style={styles.modalInfoRow}>
+                  <Ionicons name="location-outline" size={18} color="#2c5a73" />
+                  <Text style={styles.modalInfoText}>
+                    {selectedGuider.city || selectedGuider.state || selectedGuider.placeName || "Location not specified"}
                   </Text>
                 </View>
-              </View>
 
-              {selectedGuider.verified && (
-                <View style={styles.modalVerifiedBadge}>
-                  <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-                  <Text style={styles.modalVerifiedText}>Verified Guide</Text>
+                {selectedGuider.experience && (
+                  <View style={styles.modalInfoRow}>
+                    <Ionicons name="school-outline" size={18} color="#2c5a73" />
+                    <Text style={styles.modalInfoText}>Experience: {selectedGuider.experience} years</Text>
+                  </View>
+                )}
+
+                <View style={styles.modalDivider} />
+
+                {/* Contact Section */}
+                <Text style={styles.modalSectionTitle}>Contact Information</Text>
+                
+                <View style={styles.modalContactContainer}>
+                  {selectedGuider.phone && (
+                    <TouchableOpacity 
+                      style={styles.modalContactItem}
+                      onPress={() => handleCall(selectedGuider.phone)}
+                    >
+                      <View style={[styles.modalContactIcon, { backgroundColor: '#E3F2FD' }]}>
+                        <Ionicons name="call" size={20} color="#2196F3" />
+                      </View>
+                      <View style={styles.modalContactInfo}>
+                        <Text style={styles.modalContactLabel}>Phone</Text>
+                        <Text style={styles.modalContactValue}>{selectedGuider.phone}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
+
+                  {selectedGuider.whatsapp && (
+                    <TouchableOpacity 
+                      style={styles.modalContactItem}
+                      onPress={() => handleWhatsApp(selectedGuider.whatsapp)}
+                    >
+                      <View style={[styles.modalContactIcon, { backgroundColor: '#E8F5E9' }]}>
+                        <Ionicons name="logo-whatsapp" size={20} color="#25D366" />
+                      </View>
+                      <View style={styles.modalContactInfo}>
+                        <Text style={styles.modalContactLabel}>WhatsApp</Text>
+                        <Text style={styles.modalContactValue}>{selectedGuider.whatsapp}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
+
+                  {selectedGuider.email && (
+                    <TouchableOpacity 
+                      style={styles.modalContactItem}
+                      onPress={() => handleEmail(selectedGuider.email)}
+                    >
+                      <View style={[styles.modalContactIcon, { backgroundColor: '#FFEBEE' }]}>
+                        <Ionicons name="mail" size={20} color="#EA4335" />
+                      </View>
+                      <View style={styles.modalContactInfo}>
+                        <Text style={styles.modalContactLabel}>Email</Text>
+                        <Text style={styles.modalContactValue}>{selectedGuider.email}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
+
+                  {selectedGuider.website && (
+                    <TouchableOpacity 
+                      style={styles.modalContactItem}
+                      onPress={() => Linking.openURL(selectedGuider.website)}
+                    >
+                      <View style={[styles.modalContactIcon, { backgroundColor: '#F3E5F5' }]}>
+                        <Ionicons name="globe" size={20} color="#9C27B0" />
+                      </View>
+                      <View style={styles.modalContactInfo}>
+                        <Text style={styles.modalContactLabel}>Website</Text>
+                        <Text style={styles.modalContactValue} numberOfLines={1}>{selectedGuider.website}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
                 </View>
-              )}
 
-              <Text style={styles.modalDescription}>
-                {selectedGuider.description || "No description available"}
-              </Text>
+                <View style={styles.modalDivider} />
 
-              <View style={styles.modalStats}>
-                <View style={styles.modalStat}>
-                  <Ionicons name="people-outline" size={18} color="#2c5a73" />
-                  <Text style={styles.modalStatValue}>{selectedGuider.totalBookings || 0}</Text>
-                  <Text style={styles.modalStatLabel}>Tours</Text>
+                {/* Services Section */}
+                <Text style={styles.modalSectionTitle}>Services Offered</Text>
+                
+                {selectedGuider.services && selectedGuider.services.length > 0 ? (
+                  <View style={styles.modalServicesContainer}>
+                    {selectedGuider.services.map((service, index) => (
+                      <View key={index} style={styles.modalServiceItem}>
+                        <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+                        <Text style={styles.modalServiceText}>{service}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={styles.modalEmptyText}>No services specified</Text>
+                )}
+
+                <View style={styles.modalDivider} />
+
+                {/* Languages Section */}
+                {selectedGuider.languages && selectedGuider.languages.length > 0 && (
+                  <>
+                    <Text style={styles.modalSectionTitle}>Languages</Text>
+                    <View style={styles.modalTagsContainer}>
+                      {selectedGuider.languages.map((lang, index) => (
+                        <View key={index} style={styles.modalTag}>
+                          <Text style={styles.modalTagText}>{lang}</Text>
+                        </View>
+                      ))}
+                    </View>
+                    <View style={styles.modalDivider} />
+                  </>
+                )}
+
+                {/* Description */}
+                <Text style={styles.modalSectionTitle}>About</Text>
+                <Text style={styles.modalDescription}>
+                  {selectedGuider.description || "No description available"}
+                </Text>
+
+                <View style={styles.modalDivider} />
+
+                {/* Stats */}
+                <View style={styles.modalStatsRow}>
+                  <View style={styles.modalStatBox}>
+                    <Text style={styles.modalStatBoxValue}>{selectedGuider.totalBookings || 0}</Text>
+                    <Text style={styles.modalStatBoxLabel}>Total Tours</Text>
+                  </View>
+                  <View style={styles.modalStatBox}>
+                    <Text style={styles.modalStatBoxValue}>{selectedGuider.reviewCount || 0}</Text>
+                    <Text style={styles.modalStatBoxLabel}>Reviews</Text>
+                  </View>
+                  <View style={styles.modalStatBox}>
+                    <Text style={styles.modalStatBoxValue}>{selectedGuider.yearsOfExperience || 0}</Text>
+                    <Text style={styles.modalStatBoxLabel}>Years Exp</Text>
+                  </View>
                 </View>
-                <View style={styles.modalStat}>
-                  <Ionicons name="star-outline" size={18} color="#2c5a73" />
-                  <Text style={styles.modalStatValue}>{selectedGuider.reviewCount || 0}</Text>
-                  <Text style={styles.modalStatLabel}>Reviews</Text>
-                </View>
-              </View>
 
-              <TouchableOpacity
-                style={styles.modalButton}
-                onPress={() => {
-                  setGuiderModal(false);
-                  navigation.navigate("GuiderDetails", { guiderId: selectedGuider.id });
-                }}
-              >
-                <LinearGradient
-                  colors={["#2c5a73", "#1e3c4f"]}
-                  style={styles.modalButtonGradient}
+                <View style={{ height: 20 }} />
+              </ScrollView>
+
+              <View style={styles.modalButtonContainer}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonPrimary]}
+                  onPress={() => {
+                    setGuiderModal(false);
+                    navigation.navigate("GuiderDetails", { guiderId: selectedGuider.id });
+                  }}
                 >
-                  <Text style={styles.modalButtonText}>View Full Profile</Text>
-                </LinearGradient>
-              </TouchableOpacity>
+                  <LinearGradient
+                    colors={["#2c5a73", "#1e3c4f"]}
+                    style={styles.modalButtonGradient}
+                  >
+                    <Text style={styles.modalButtonText}>View Full Profile</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
             </>
           )}
         </View>
@@ -776,7 +1139,7 @@ export default function UserDashboard({ navigation }) {
     <Modal
       visible={photographerModal}
       transparent={true}
-      animationType="fade"
+      animationType="slide"
       onRequestClose={() => setPhotographerModal(false)}
     >
       <BlurView intensity={20} style={StyleSheet.absoluteFill} />
@@ -785,86 +1148,208 @@ export default function UserDashboard({ navigation }) {
         activeOpacity={1}
         onPress={() => setPhotographerModal(false)}
       >
-        <View style={styles.modalContent}>
+        <View style={styles.modalContentLarge}>
           {selectedPhotographer && (
             <>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>
-                  {selectedPhotographer.firmName || selectedPhotographer.name || "Photographer"}
-                </Text>
-                <TouchableOpacity onPress={() => setPhotographerModal(false)}>
-                  <Ionicons name="close" size={24} color="#64748b" />
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.modalProfileHeader}>
-                {selectedPhotographer.featuredImage ? (
-                  <Image
-                    source={{ uri: getImageUrl(selectedPhotographer.featuredImage) }}
-                    style={styles.modalProfileImage}
-                  />
-                ) : (
-                  <LinearGradient
-                    colors={['#2c5a73', '#1e3c4f']}
-                    style={[styles.modalProfileImage, styles.modalImagePlaceholder]}
-                  >
-                    <Text style={styles.modalProfileInitial}>
-                      {selectedPhotographer.firmName?.charAt(0) || selectedPhotographer.name?.charAt(0) || 'P'}
-                    </Text>
-                  </LinearGradient>
-                )}
-
-                <View style={styles.modalRating}>
-                  {renderRating(selectedPhotographer.rating)}
-                  <Text style={styles.modalRatingText}>({selectedPhotographer.rating?.toFixed(1) || '0.0'})</Text>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>
+                    {selectedPhotographer.firmName || selectedPhotographer.name || "Photographer"}
+                  </Text>
+                  <TouchableOpacity onPress={() => setPhotographerModal(false)} style={styles.modalCloseBtn}>
+                    <Ionicons name="close" size={24} color="#64748b" />
+                  </TouchableOpacity>
                 </View>
 
-                <View style={styles.modalLocation}>
-                  <Ionicons name="location-outline" size={16} color="#2c5a73" />
-                  <Text style={styles.modalLocationText}>
-                    {selectedPhotographer.placeName || "Local Photographer"}
+                <View style={styles.modalProfileContainer}>
+                  {selectedPhotographer.featuredImage ? (
+                    <Image
+                      source={{ uri: getImageUrl(selectedPhotographer.featuredImage) }}
+                      style={styles.modalProfileImageLarge}
+                    />
+                  ) : (
+                    <LinearGradient
+                      colors={['#8B5CF6', '#6D28D9']}
+                      style={styles.modalProfileImageLarge}
+                    >
+                      <Text style={styles.modalProfileInitialLarge}>
+                        {selectedPhotographer.firmName?.charAt(0) || selectedPhotographer.name?.charAt(0) || 'P'}
+                      </Text>
+                    </LinearGradient>
+                  )}
+
+                  <View style={styles.modalRatingContainer}>
+                    {renderRating(selectedPhotographer.rating, 16)}
+                    <Text style={styles.modalRatingTextLarge}>({selectedPhotographer.rating?.toFixed(1) || '0.0'})</Text>
+                  </View>
+
+                  {selectedPhotographer.verified && (
+                    <View style={styles.modalVerifiedBadgeLarge}>
+                      <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+                      <Text style={styles.modalVerifiedText}>Verified Photographer</Text>
+                    </View>
+                  )}
+                </View>
+
+                <View style={styles.modalInfoRow}>
+                  <Ionicons name="location-outline" size={18} color="#2c5a73" />
+                  <Text style={styles.modalInfoText}>
+                    {selectedPhotographer.city || selectedPhotographer.state || selectedPhotographer.placeName || "Location not specified"}
                   </Text>
                 </View>
-              </View>
 
-              {selectedPhotographer.verified && (
-                <View style={styles.modalVerifiedBadge}>
-                  <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-                  <Text style={styles.modalVerifiedText}>Verified Photographer</Text>
+                {selectedPhotographer.experience && (
+                  <View style={styles.modalInfoRow}>
+                    <Ionicons name="school-outline" size={18} color="#2c5a73" />
+                    <Text style={styles.modalInfoText}>Experience: {selectedPhotographer.experience} years</Text>
+                  </View>
+                )}
+
+                <View style={styles.modalDivider} />
+
+                {/* Contact Section */}
+                <Text style={styles.modalSectionTitle}>Contact Information</Text>
+                
+                <View style={styles.modalContactContainer}>
+                  {selectedPhotographer.phone && (
+                    <TouchableOpacity 
+                      style={styles.modalContactItem}
+                      onPress={() => handleCall(selectedPhotographer.phone)}
+                    >
+                      <View style={[styles.modalContactIcon, { backgroundColor: '#E3F2FD' }]}>
+                        <Ionicons name="call" size={20} color="#2196F3" />
+                      </View>
+                      <View style={styles.modalContactInfo}>
+                        <Text style={styles.modalContactLabel}>Phone</Text>
+                        <Text style={styles.modalContactValue}>{selectedPhotographer.phone}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
+
+                  {selectedPhotographer.whatsapp && (
+                    <TouchableOpacity 
+                      style={styles.modalContactItem}
+                      onPress={() => handleWhatsApp(selectedPhotographer.whatsapp)}
+                    >
+                      <View style={[styles.modalContactIcon, { backgroundColor: '#E8F5E9' }]}>
+                        <Ionicons name="logo-whatsapp" size={20} color="#25D366" />
+                      </View>
+                      <View style={styles.modalContactInfo}>
+                        <Text style={styles.modalContactLabel}>WhatsApp</Text>
+                        <Text style={styles.modalContactValue}>{selectedPhotographer.whatsapp}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
+
+                  {selectedPhotographer.email && (
+                    <TouchableOpacity 
+                      style={styles.modalContactItem}
+                      onPress={() => handleEmail(selectedPhotographer.email)}
+                    >
+                      <View style={[styles.modalContactIcon, { backgroundColor: '#FFEBEE' }]}>
+                        <Ionicons name="mail" size={20} color="#EA4335" />
+                      </View>
+                      <View style={styles.modalContactInfo}>
+                        <Text style={styles.modalContactLabel}>Email</Text>
+                        <Text style={styles.modalContactValue}>{selectedPhotographer.email}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
+
+                  {selectedPhotographer.instagram && (
+                    <TouchableOpacity 
+                      style={styles.modalContactItem}
+                      onPress={() => Linking.openURL(`https://instagram.com/${selectedPhotographer.instagram}`)}
+                    >
+                      <View style={[styles.modalContactIcon, { backgroundColor: '#FCE4EC' }]}>
+                        <Ionicons name="logo-instagram" size={20} color="#E4405F" />
+                      </View>
+                      <View style={styles.modalContactInfo}>
+                        <Text style={styles.modalContactLabel}>Instagram</Text>
+                        <Text style={styles.modalContactValue}>@{selectedPhotographer.instagram}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
                 </View>
-              )}
 
-              <Text style={styles.modalDescription}>
-                {selectedPhotographer.description || "No description available"}
-              </Text>
+                <View style={styles.modalDivider} />
 
-              <View style={styles.modalStats}>
-                <View style={styles.modalStat}>
-                  <Ionicons name="camera-outline" size={18} color="#2c5a73" />
-                  <Text style={styles.modalStatValue}>{selectedPhotographer.totalBookings || 0}</Text>
-                  <Text style={styles.modalStatLabel}>Shoots</Text>
+                {/* Services/Specializations Section */}
+                <Text style={styles.modalSectionTitle}>Photography Services</Text>
+                
+                {selectedPhotographer.services && selectedPhotographer.services.length > 0 ? (
+                  <View style={styles.modalServicesContainer}>
+                    {selectedPhotographer.services.map((service, index) => (
+                      <View key={index} style={styles.modalServiceItem}>
+                        <Ionicons name="camera" size={18} color="#2c5a73" />
+                        <Text style={styles.modalServiceText}>{service}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={styles.modalEmptyText}>No services specified</Text>
+                )}
+
+                <View style={styles.modalDivider} />
+
+                {/* Equipment Section */}
+                {selectedPhotographer.equipment && selectedPhotographer.equipment.length > 0 && (
+                  <>
+                    <Text style={styles.modalSectionTitle}>Equipment</Text>
+                    <View style={styles.modalTagsContainer}>
+                      {selectedPhotographer.equipment.map((item, index) => (
+                        <View key={index} style={styles.modalTag}>
+                          <Text style={styles.modalTagText}>{item}</Text>
+                        </View>
+                      ))}
+                    </View>
+                    <View style={styles.modalDivider} />
+                  </>
+                )}
+
+                {/* Description */}
+                <Text style={styles.modalSectionTitle}>About</Text>
+                <Text style={styles.modalDescription}>
+                  {selectedPhotographer.description || "No description available"}
+                </Text>
+
+                <View style={styles.modalDivider} />
+
+                {/* Stats */}
+                <View style={styles.modalStatsRow}>
+                  <View style={styles.modalStatBox}>
+                    <Text style={styles.modalStatBoxValue}>{selectedPhotographer.totalBookings || 0}</Text>
+                    <Text style={styles.modalStatBoxLabel}>Total Shoots</Text>
+                  </View>
+                  <View style={styles.modalStatBox}>
+                    <Text style={styles.modalStatBoxValue}>{selectedPhotographer.reviewCount || 0}</Text>
+                    <Text style={styles.modalStatBoxLabel}>Reviews</Text>
+                  </View>
+                  <View style={styles.modalStatBox}>
+                    <Text style={styles.modalStatBoxValue}>{selectedPhotographer.photosDelivered || 0}+</Text>
+                    <Text style={styles.modalStatBoxLabel}>Photos</Text>
+                  </View>
                 </View>
-                <View style={styles.modalStat}>
-                  <Ionicons name="star-outline" size={18} color="#2c5a73" />
-                  <Text style={styles.modalStatValue}>{selectedPhotographer.reviewCount || 0}</Text>
-                  <Text style={styles.modalStatLabel}>Reviews</Text>
-                </View>
-              </View>
 
-              <TouchableOpacity
-                style={styles.modalButton}
-                onPress={() => {
-                  setPhotographerModal(false);
-                  navigation.navigate("PhotographerDetails", { photographerId: selectedPhotographer.id });
-                }}
-              >
-                <LinearGradient
-                  colors={["#2c5a73", "#1e3c4f"]}
-                  style={styles.modalButtonGradient}
+                <View style={{ height: 20 }} />
+              </ScrollView>
+
+              <View style={styles.modalButtonContainer}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonPrimary]}
+                  onPress={() => {
+                    setPhotographerModal(false);
+                    navigation.navigate("PhotographerDetails", { photographerId: selectedPhotographer.id });
+                  }}
                 >
-                  <Text style={styles.modalButtonText}>View Full Profile</Text>
-                </LinearGradient>
-              </TouchableOpacity>
+                  <LinearGradient
+                    colors={["#2c5a73", "#1e3c4f"]}
+                    style={styles.modalButtonGradient}
+                  >
+                    <Text style={styles.modalButtonText}>View Full Profile</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
             </>
           )}
         </View>
@@ -985,7 +1470,7 @@ export default function UserDashboard({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* TOP PLACES SECTION - New Improved Style */}
+        {/* TOP PLACES SECTION */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleContainer}>
@@ -1009,7 +1494,7 @@ export default function UserDashboard({ navigation }) {
           </ScrollView>
         </View>
 
-        {/* TOP GUIDERS SECTION - Original Style */}
+        {/* TOP GUIDERS SECTION */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleContainer}>
@@ -1023,7 +1508,7 @@ export default function UserDashboard({ navigation }) {
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {data.topGuiders.length > 0 ? (
-              data.topGuiders.map(guider => renderPersonCard(guider, 'guider'))
+              data.topGuiders.map(guider => renderTopGuiderCard(guider))
             ) : (
               <View style={styles.emptyCard}>
                 <Ionicons name="people-outline" size={30} color="#94a3b8" />
@@ -1033,7 +1518,7 @@ export default function UserDashboard({ navigation }) {
           </ScrollView>
         </View>
 
-        {/* TOP PHOTOGRAPHERS SECTION - Original Style */}
+        {/* TOP PHOTOGRAPHERS SECTION */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleContainer}>
@@ -1047,7 +1532,7 @@ export default function UserDashboard({ navigation }) {
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {data.topPhotographers.length > 0 ? (
-              data.topPhotographers.map(photographer => renderPersonCard(photographer, 'photographer'))
+              data.topPhotographers.map(photographer => renderTopPhotographerCard(photographer))
             ) : (
               <View style={styles.emptyCard}>
                 <Ionicons name="camera-outline" size={30} color="#94a3b8" />
@@ -1222,21 +1707,18 @@ const styles = StyleSheet.create({
   // Section Styles
   section: {
     marginBottom: 24,
-
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    marginBottom: 16,
-    
+    marginBottom: 12,
   },
   sectionTitleContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-   
   },
   sectionTitle: {
     fontSize: 18,
@@ -1249,119 +1731,145 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Top Place Card Styles (New Improved)
-  topPlaceCard: {
-    width: 175,
-    marginLeft: 15,
-    borderRadius: 16,
-    overflow: 'hidden',
-    backgroundColor: '#fff',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-     marginBottom:20,
-     gap:5
-  },
-  topPlaceImageContainer: {
-    width: '100%',
-    height: 150,
-    position: 'relative',
-  },
-  topPlaceImage: {
-    width: '100%',
-    height: '100%',
-  },
-  topPlaceGradient: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 60,
-  },
-  topPlaceBadge: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
+  // ✅ UPDATED: Rating Stars Container - Centered
+  ratingStarsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    gap: 4,
+    justifyContent: 'center',
+    marginTop: 4,
+    gap: 2,
   },
-  topPlaceBadgeText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#FFD700',
-  },
-  topPlaceInfo: {
-    padding: 12,
-  },
-  topPlaceName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#1e293b',
-    marginBottom: 4,
-  },
-  topPlaceLocation: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  topPlaceLocationText: {
-    fontSize: 12,
-    color: '#64748b',
+  ratingValue: {
+    fontSize: 10,
+    color: '#94a3b8',
+    marginLeft: 4,
   },
 
-  // Original Person Card Styles (for Guiders and Photographers)
-  personCardOriginal: {
-    width: 110,
-    marginLeft: 16,
-    backgroundColor: '#fff',
+  // ✅ UPDATED: Top Place Card Styles - Centered Details
+  topPlaceCard: {
+    width: 140,
+    backgroundColor: '#ffffff',
     borderRadius: 16,
-    padding: 12,
-    alignItems: 'center',
+    marginLeft: 16,
+    marginBottom: 8,
     elevation: 3,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    marginBottom: 10
+    overflow: 'hidden',
   },
-  personCardImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    marginBottom: 8,
+  topPlaceImageContainer: {
+    width: '100%',
+    height: 110,
+    backgroundColor: '#ffffff',
+    padding: '5%',
+    borderColor: '#ebecee',
+    borderWidth: 1,
   },
-  personImagePlaceholderOriginal: {
-    backgroundColor: '#2c5a73',
-    justifyContent: 'center',
+  topPlaceImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 12,
+  },
+  topPlaceInfo: {
+    padding: 10,
     alignItems: 'center',
   },
-  personInitialOriginal: {
-    fontSize: 24,
+  topPlaceName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1e293b',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  topPlaceLocation: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    marginBottom: 4,
+  },
+  topPlaceLocationText: {
+    fontSize: 11,
+    color: '#64748b',
+    textAlign: 'center',
+  },
+
+  // ✅ UPDATED: Top Guider/Photographer Card Styles - Centered Details
+  topGuiderCard: {
+    width: 140,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    marginLeft: 16,
+    marginBottom: 8,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    overflow: 'hidden',
+  },
+  topGuiderImageContainer: {
+    width: '100%',
+    height: 110,
+    backgroundColor: '#ffffff',
+    padding: '5%',
+    borderColor: '#ebecee',
+    borderWidth: 1,
+  },
+  topGuiderImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 12,
+  },
+  topGuiderImagePlaceholder: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 12,
+  },
+  topGuiderInitial: {
+    fontSize: 36,
     fontWeight: 'bold',
     color: '#fff',
   },
-  personCardName: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#1e293b',
-    textAlign: 'center',
-    marginBottom: 4,
-  },
-  personCardRating: {
-    flexDirection: 'row',
+  topGuiderInfo: {
+    padding: 10,
     alignItems: 'center',
   },
-  personCardRatingText: {
-    fontSize: 10,
+  topGuiderName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1e293b',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  topGuiderLocation: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    marginBottom: 4,
+  },
+  topGuiderLocationText: {
+    fontSize: 11,
     color: '#64748b',
-    marginLeft: 2,
+    textAlign: 'center',
+  },
+  topGuiderVerified: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  topGuiderVerifiedText: {
+    fontSize: 10,
+    color: '#10B981',
+    fontWeight: '500',
+    textAlign: 'center',
   },
 
   // Placeholder Styles
@@ -1371,10 +1879,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#f1f5f9',
+    borderRadius: 12,
   },
   emptyCard: {
-    width: 200,
-    height: 150,
+    width: 140,
+    height: 180,
     marginLeft: 16,
     backgroundColor: '#f1f5f9',
     borderRadius: 16,
@@ -1383,20 +1892,23 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     color: '#94a3b8',
-    fontSize: 14,
+    fontSize: 12,
     marginTop: 8,
+    textAlign: 'center',
+    paddingHorizontal: 10,
   },
 
-  // Modal Styles
+  // Modal Styles (unchanged)
   modalOverlay: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.5)',
   },
-  modalContent: {
-    width: '85%',
-    maxWidth: 340,
+  modalContentLarge: {
+    width: '90%',
+    maxWidth: 400,
+    maxHeight: '80%',
     backgroundColor: '#fff',
     borderRadius: 24,
     padding: 20,
@@ -1413,63 +1925,55 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
     color: '#1e293b',
     flex: 1,
   },
-  modalImage: {
-    width: '100%',
-    height: 150,
-    borderRadius: 12,
-    marginBottom: 12,
+  modalCloseBtn: {
+    padding: 4,
   },
-  modalImagePlaceholder: {
+  modalImageContainer: {
     width: '100%',
-    height: 150,
-    borderRadius: 12,
+    height: 180,
+    marginBottom: 16,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  modalImageLarge: {
+    width: '100%',
+    height: '100%',
+  },
+  modalProfileContainer: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalProfileImageLarge: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    marginBottom: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
   },
-  modalProfileHeader: {
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  modalProfileImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    marginBottom: 8,
-  },
-  modalProfileInitial: {
-    fontSize: 32,
+  modalProfileInitialLarge: {
+    fontSize: 48,
     fontWeight: 'bold',
     color: '#fff',
   },
-  modalRating: {
+  modalRatingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
   },
-  modalRatingText: {
-    fontSize: 13,
+  modalRatingTextLarge: {
+    fontSize: 14,
     color: '#64748b',
     marginLeft: 4,
   },
-  modalLocation: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  modalLocationText: {
-    fontSize: 13,
-    color: '#1e293b',
-    marginLeft: 4,
-  },
-  modalVerifiedBadge: {
+  modalVerifiedBadgeLarge: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1477,7 +1981,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
-    marginBottom: 12,
     alignSelf: 'center',
   },
   modalVerifiedText: {
@@ -1486,33 +1989,160 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginLeft: 4,
   },
-  modalDescription: {
-    fontSize: 13,
-    color: '#475569',
-    lineHeight: 18,
-    marginBottom: 16,
-  },
-  modalStats: {
+  modalInfoRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 20,
+    alignItems: 'center',
+    marginBottom: 8,
   },
-  modalStat: {
+  modalInfoText: {
+    fontSize: 14,
+    color: '#475569',
+    marginLeft: 8,
+    flex: 1,
+  },
+  modalDivider: {
+    height: 1,
+    backgroundColor: '#e2e8f0',
+    marginVertical: 16,
+  },
+  modalSectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1e293b',
+    marginBottom: 12,
+  },
+  modalDescription: {
+    fontSize: 14,
+    color: '#475569',
+    lineHeight: 20,
+  },
+  modalStatsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  modalStatItem: {
+    width: '48%',
+    backgroundColor: '#f8fafc',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 8,
     alignItems: 'center',
   },
+  modalStatLabel: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 4,
+  },
   modalStatValue: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '600',
     color: '#1e293b',
     marginTop: 2,
   },
-  modalStatLabel: {
+  modalTagsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  modalTag: {
+    backgroundColor: '#e2e8f0',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  modalTagText: {
+    fontSize: 12,
+    color: '#475569',
+  },
+  modalContactContainer: {
+    marginBottom: 8,
+  },
+  modalContactItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  modalContactIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  modalContactInfo: {
+    flex: 1,
+  },
+  modalContactLabel: {
     fontSize: 11,
     color: '#64748b',
+    marginBottom: 2,
+  },
+  modalContactValue: {
+    fontSize: 14,
+    color: '#1e293b',
+    fontWeight: '500',
+  },
+  modalServicesContainer: {
+    marginBottom: 8,
+  },
+  modalServiceItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 6,
+  },
+  modalServiceText: {
+    fontSize: 13,
+    color: '#475569',
+    marginLeft: 8,
+    flex: 1,
+  },
+  modalEmptyText: {
+    fontSize: 13,
+    color: '#94a3b8',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    padding: 16,
+  },
+  modalStatsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    backgroundColor: '#f8fafc',
+    padding: 16,
+    borderRadius: 12,
+  },
+  modalStatBox: {
+    alignItems: 'center',
+  },
+  modalStatBoxValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#2c5a73',
+  },
+  modalStatBoxLabel: {
+    fontSize: 11,
+    color: '#64748b',
+    marginTop: 2,
+  },
+  modalButtonContainer: {
+    marginTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+    paddingTop: 16,
   },
   modalButton: {
     borderRadius: 12,
     overflow: 'hidden',
+  },
+  modalButtonPrimary: {
+    marginBottom: 8,
   },
   modalButtonGradient: {
     paddingVertical: 14,

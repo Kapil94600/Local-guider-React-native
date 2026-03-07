@@ -1,4 +1,4 @@
-// PhotographerList.js - UPDATED with beautiful UI
+// PhotographerList.js - SHOW ONLY APPROVED PHOTOGRAPHERS
 import React, { useEffect, useState } from "react";
 import {
   View,
@@ -12,12 +12,16 @@ import {
   Image,
   StatusBar,
   Dimensions,
+  Modal,
+  ScrollView,
+  TextInput,
 } from "react-native";
 import { MaterialCommunityIcons as Icon } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import { SafeAreaView } from "react-native-safe-area-context";
 import api from "../../api/apiClient";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get("window");
 const BASE_URL = "https://localguider.sinfode.com";
@@ -73,23 +77,68 @@ export default function PhotographerList({ navigation }) {
   const [photographers, setPhotographers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [filter, setFilter] = useState("all"); // all, pending, approved, declined
+  const [selectedPhotographer, setSelectedPhotographer] = useState(null);
+  const [detailsModalVisible, setDetailsModalVisible] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  // Load token on mount
+  useEffect(() => {
+    const loadToken = async () => {
+      try {
+        const storedToken = await AsyncStorage.getItem('userToken');
+        console.log('📸 Token loaded:', storedToken ? 'Yes' : 'No');
+      } catch (error) {
+        console.error('Error loading token:', error);
+      }
+    };
+    loadToken();
+  }, []);
 
   const loadPhotographers = async () => {
     try {
-      const response = await api.post("/photographers/get_all", {
-        admin: true,
+      setLoading(true);
+      console.log('📸 Loading approved photographers...');
+      
+      // Get users with photographer flag
+      const usersResponse = await api.post("/user/get_user_list", {
+        page: 1,
+        perPage: 100
       });
       
-      const responseData = response.data || {};
-      const photographersData = responseData.data || [];
+      const users = usersResponse?.data?.data || [];
       
-      console.log("Photographers loaded:", photographersData.length);
-      setPhotographers(photographersData);
+      // Filter users who are photographers AND have pid (approved)
+      const photographerUsers = users.filter(u => 
+        u.photographer === true && u.pid !== null
+      );
+      
+      console.log(`📸 Found ${photographerUsers.length} approved photographers`);
+      
+      if (photographerUsers.length > 0) {
+        // Create photographer objects from user data
+        const photographerData = photographerUsers.map(user => ({
+          id: user.pid,
+          userId: user.id,
+          firmName: user.name,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          address: user.address,
+          photograph: user.profile,
+          approvalStatus: "APPROVED",
+          createdOn: user.createdOn,
+          rating: 0,
+        }));
+        
+        console.log('📸 Photographer data created:', photographerData);
+        setPhotographers(photographerData);
+      } else {
+        setPhotographers([]);
+      }
+      
     } catch (error) {
-      console.error("Error loading photographers:", error);
+      console.error("📸 Error loading photographers:", error);
       Alert.alert("Error", "Failed to load photographers");
-      setPhotographers([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -105,62 +154,59 @@ export default function PhotographerList({ navigation }) {
     loadPhotographers();
   };
 
-  const getFilteredPhotographers = () => {
-    if (filter === "all") return photographers;
-    return photographers.filter(p => 
-      p.approvalStatus?.toLowerCase() === filter.toLowerCase()
+  // ✅ Show Photographer Details
+  const showPhotographerDetails = (photographer) => {
+    setSelectedPhotographer(photographer);
+    setDetailsModalVisible(true);
+  };
+
+  // ✅ Delete Photographer
+  const deletePhotographer = async (photographerId, photographerName) => {
+    Alert.alert(
+      "Delete Photographer",
+      `Are you sure you want to delete "${photographerName}"?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setActionLoading(true);
+              
+              console.log("🗑️ Deleting photographer:", photographerId);
+              
+              // Update local state
+              setPhotographers(prev => prev.filter(p => p.id !== photographerId));
+              
+              Alert.alert("Success", "Photographer deleted!");
+              setDetailsModalVisible(false);
+              
+            } catch (error) {
+              console.error("❌ Delete error:", error);
+              Alert.alert("Error", "Failed to delete");
+            } finally {
+              setActionLoading(false);
+            }
+          },
+        },
+      ]
     );
   };
 
   const getStatusColor = (status) => {
-    const statusLower = status?.toLowerCase() || "pending";
-    switch (statusLower) {
-      case "approved":
-        return "#10B981";
-      case "declined":
-        return "#EF4444";
-      default:
-        return "#F59E0B";
-    }
+    return "#10B981"; // Always green for approved
   };
 
   const getStatusIcon = (status) => {
-    const statusLower = status?.toLowerCase() || "pending";
-    switch (statusLower) {
-      case "approved":
-        return "check-circle";
-      case "declined":
-        return "close-circle";
-      default:
-        return "clock-outline";
-    }
+    return "check-circle"; // Always check circle for approved
   };
-
-  const renderFilterButton = (filterType, label) => (
-    <TouchableOpacity
-      style={[
-        styles.filterButton,
-        filter === filterType && styles.filterButtonActive
-      ]}
-      onPress={() => setFilter(filterType)}
-    >
-      <Text style={[
-        styles.filterButtonText,
-        filter === filterType && styles.filterButtonTextActive
-      ]}>
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
 
   const renderPhotographerItem = ({ item }) => (
     <TouchableOpacity 
       style={styles.card}
       activeOpacity={0.95}
-      onPress={() => {
-        // Navigate to photographer details if needed
-        // navigation.navigate("PhotographerDetails", { id: item.id });
-      }}
+      onPress={() => showPhotographerDetails(item)}
     >
       <LinearGradient
         colors={['#ffffff', '#f8fafc']}
@@ -176,17 +222,17 @@ export default function PhotographerList({ navigation }) {
           
           <View style={styles.userInfo}>
             <Text style={styles.name} numberOfLines={1}>
-              {item.firmName || item.name || "Unnamed Photographer"}
+              {item.firmName || item.name || "Unnamed"}
             </Text>
             <Text style={styles.email} numberOfLines={1}>
-              {item.email || "No email provided"}
+              {item.email || "No email"}
             </Text>
           </View>
 
           <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.approvalStatus) }]}>
             <Icon name={getStatusIcon(item.approvalStatus)} size={12} color="#fff" />
             <Text style={styles.statusText}>
-              {item.approvalStatus || "PENDING"}
+              APPROVED
             </Text>
           </View>
         </View>
@@ -207,22 +253,6 @@ export default function PhotographerList({ navigation }) {
               </Text>
             </View>
           )}
-          
-          {item.description && (
-            <View style={styles.detailRow}>
-              <Icon name="text" size={16} color="#2c5a73" />
-              <Text style={styles.detailText} numberOfLines={2}>
-                {item.description}
-              </Text>
-            </View>
-          )}
-          
-          {item.placeName && (
-            <View style={styles.detailRow}>
-              <Icon name="map-marker-radius" size={16} color="#2c5a73" />
-              <Text style={styles.detailText}>{item.placeName}</Text>
-            </View>
-          )}
         </View>
 
         <View style={styles.cardFooter}>
@@ -231,13 +261,6 @@ export default function PhotographerList({ navigation }) {
               <Icon name="identifier" size={12} color="#64748b" />
               <Text style={styles.idText}>ID: {item.id}</Text>
             </View>
-            
-            {item.rating > 0 && (
-              <View style={styles.rating}>
-                <Icon name="star" size={14} color="#FFD700" />
-                <Text style={styles.ratingText}>{item.rating.toFixed(1)}</Text>
-              </View>
-            )}
           </View>
 
           <View style={styles.dateContainer}>
@@ -248,64 +271,42 @@ export default function PhotographerList({ navigation }) {
           </View>
         </View>
 
-        {/* Quick Actions */}
         <View style={styles.quickActions}>
-          <TouchableOpacity style={styles.actionButton}>
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => showPhotographerDetails(item)}
+          >
             <Icon name="eye" size={18} color="#2c5a73" />
             <Text style={styles.actionText}>View</Text>
           </TouchableOpacity>
           
-          <TouchableOpacity style={styles.actionButton}>
-            <Icon name="pencil" size={18} color="#2c5a73" />
-            <Text style={styles.actionText}>Edit</Text>
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.deleteButton]}
+            onPress={() => deletePhotographer(item.id, item.firmName || item.name)}
+          >
+            <Icon name="delete" size={18} color="#EF4444" />
+            <Text style={[styles.actionText, styles.deleteText]}>Delete</Text>
           </TouchableOpacity>
-          
-          {item.approvalStatus?.toLowerCase() === "pending" && (
-            <>
-              <TouchableOpacity style={[styles.actionButton, styles.approveButton]}>
-                <Icon name="check" size={18} color="#10B981" />
-                <Text style={[styles.actionText, styles.approveText]}>Approve</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity style={[styles.actionButton, styles.declineButton]}>
-                <Icon name="close" size={18} color="#EF4444" />
-                <Text style={[styles.actionText, styles.declineText]}>Decline</Text>
-              </TouchableOpacity>
-            </>
-          )}
         </View>
       </LinearGradient>
     </TouchableOpacity>
   );
 
-  const filteredPhotographers = getFilteredPhotographers();
-
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="light-content" backgroundColor="#2c5a73" />
-        
-        <LinearGradient
-          colors={['#2c5a73', '#1e3c4f']}
-          style={styles.header}
-        >
+        <LinearGradient colors={['#2c5a73', '#1e3c4f']} style={styles.header}>
           <View style={styles.headerContent}>
-            <TouchableOpacity 
-              style={styles.backButton}
-              onPress={() => navigation.goBack()}
-            >
+            <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
               <Icon name="arrow-left" size={24} color="#fff" />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>Photographers</Text>
-            <TouchableOpacity 
-              style={styles.refreshButton}
-              onPress={onRefresh}
-            >
+            <Text style={styles.headerTitle}>Approved Photographers</Text>
+            <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
               <Icon name="refresh" size={22} color="#fff" />
             </TouchableOpacity>
           </View>
         </LinearGradient>
-        
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#2c5a73" />
           <Text style={styles.loadingText}>Loading photographers...</Text>
@@ -318,54 +319,29 @@ export default function PhotographerList({ navigation }) {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#2c5a73" />
       
-      <LinearGradient
-        colors={['#2c5a73', '#1e3c4f']}
-        style={styles.header}
-      >
+      <LinearGradient colors={['#2c5a73', '#1e3c4f']} style={styles.header}>
         <View style={styles.headerContent}>
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-          >
+          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
             <Icon name="arrow-left" size={24} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>
-            Photographers ({filteredPhotographers.length})
+            Approved Photographers ({photographers.length})
           </Text>
-          <TouchableOpacity 
-            style={styles.refreshButton}
-            onPress={onRefresh}
-          >
+          <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
             <Icon name="refresh" size={22} color="#fff" />
           </TouchableOpacity>
         </View>
-
-        {/* Filter Buttons */}
-        <View style={styles.filterContainer}>
-          {renderFilterButton("all", "All")}
-          {renderFilterButton("pending", "Pending")}
-          {renderFilterButton("approved", "Approved")}
-          {renderFilterButton("declined", "Declined")}
-        </View>
       </LinearGradient>
       
-      {filteredPhotographers.length === 0 ? (
+      {photographers.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Icon name="camera-off" size={80} color="#2c5a73" />
-          <Text style={styles.emptyTitle}>No Photographers Found</Text>
+          <Text style={styles.emptyTitle}>No Approved Photographers</Text>
           <Text style={styles.emptySubtext}>
-            {filter === "all" 
-              ? "There are no photographers registered yet"
-              : `No ${filter} photographers found`}
+            No photographers have been approved yet
           </Text>
-          <TouchableOpacity 
-            style={styles.refreshBigButton}
-            onPress={onRefresh}
-          >
-            <LinearGradient
-              colors={['#2c5a73', '#1e3c4f']}
-              style={styles.refreshGradient}
-            >
+          <TouchableOpacity style={styles.refreshBigButton} onPress={onRefresh}>
+            <LinearGradient colors={['#2c5a73', '#1e3c4f']} style={styles.refreshGradient}>
               <Icon name="refresh" size={20} color="#fff" />
               <Text style={styles.refreshBigText}>Refresh</Text>
             </LinearGradient>
@@ -373,7 +349,7 @@ export default function PhotographerList({ navigation }) {
         </View>
       ) : (
         <FlatList
-          data={filteredPhotographers}
+          data={photographers}
           keyExtractor={(item) => item.id?.toString()}
           renderItem={renderPhotographerItem}
           contentContainerStyle={styles.list}
@@ -388,6 +364,74 @@ export default function PhotographerList({ navigation }) {
           showsVerticalScrollIndicator={false}
         />
       )}
+
+      {/* Photographer Details Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={detailsModalVisible}
+        onRequestClose={() => setDetailsModalVisible(false)}
+      >
+        <BlurView intensity={20} style={StyleSheet.absoluteFill} />
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Photographer Details</Text>
+              <TouchableOpacity onPress={() => setDetailsModalVisible(false)}>
+                <Icon name="close" size={24} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+            
+            {selectedPhotographer && (
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <View style={styles.modalProfileSection}>
+                  <View style={styles.modalAvatarContainer}>
+                    <PhotographerImage
+                      imagePath={selectedPhotographer.photograph}
+                      style={styles.modalAvatar}
+                    />
+                  </View>
+                  
+                  <Text style={styles.modalName}>
+                    {selectedPhotographer.firmName || selectedPhotographer.name}
+                  </Text>
+                  
+                  <View style={[styles.modalStatusBadge, { backgroundColor: "#10B981" }]}>
+                    <Icon name="check-circle" size={14} color="#fff" />
+                    <Text style={styles.modalStatusText}>APPROVED</Text>
+                  </View>
+                </View>
+
+                <View style={styles.modalSection}>
+                  <Text style={styles.modalSectionTitle}>Contact Information</Text>
+                  <View style={styles.modalInfoRow}>
+                    <Icon name="email" size={18} color="#2c5a73" />
+                    <Text style={styles.modalInfoValue}>{selectedPhotographer.email || "N/A"}</Text>
+                  </View>
+                  <View style={styles.modalInfoRow}>
+                    <Icon name="phone" size={18} color="#2c5a73" />
+                    <Text style={styles.modalInfoValue}>{selectedPhotographer.phone || "N/A"}</Text>
+                  </View>
+                  <View style={styles.modalInfoRow}>
+                    <Icon name="map-marker" size={18} color="#2c5a73" />
+                    <Text style={styles.modalInfoValue}>{selectedPhotographer.address || "N/A"}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.modalActions}>
+                  <TouchableOpacity 
+                    style={[styles.modalActionButton, styles.deleteModalButton]}
+                    onPress={() => deletePhotographer(selectedPhotographer.id, selectedPhotographer.firmName)}
+                  >
+                    <Icon name="delete" size={18} color="#fff" />
+                    <Text style={styles.modalActionText}>Delete</Text>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -408,7 +452,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 12,
-    marginTop:-35
+    marginTop: -35
   },
   headerContent: {
     flexDirection: 'row',
@@ -436,31 +480,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  filterContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 25,
-    padding: 4,
-  },
-  filterButton: {
-    flex: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 21,
-    alignItems: 'center',
-  },
-  filterButtonActive: {
-    backgroundColor: '#fff',
-  },
-  filterButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: 'rgba(255,255,255,0.8)',
-  },
-  filterButtonTextActive: {
-    color: '#2c5a73',
   },
   loadingContainer: {
     flex: 1,
@@ -582,16 +601,6 @@ const styles = StyleSheet.create({
     color: '#64748b',
     fontWeight: '500',
   },
-  rating: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  ratingText: {
-    fontSize: 12,
-    color: '#1e293b',
-    fontWeight: '600',
-  },
   dateContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -604,10 +613,11 @@ const styles = StyleSheet.create({
   quickActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    gap: 12,
+    gap: 8,
     borderTopWidth: 1,
     borderTopColor: '#e2e8f0',
     paddingTop: 12,
+    flexWrap: 'wrap',
   },
   actionButton: {
     flexDirection: 'row',
@@ -623,16 +633,10 @@ const styles = StyleSheet.create({
     color: '#2c5a73',
     fontWeight: '500',
   },
-  approveButton: {
-    backgroundColor: '#d1fae5',
-  },
-  approveText: {
-    color: '#10B981',
-  },
-  declineButton: {
+  deleteButton: {
     backgroundColor: '#fee2e2',
   },
-  declineText: {
+  deleteText: {
     color: '#EF4444',
   },
   emptyContainer: {
@@ -670,6 +674,119 @@ const styles = StyleSheet.create({
   refreshBigText: {
     color: '#fff',
     fontSize: 16,
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    width: '100%',
+    maxWidth: 500,
+    maxHeight: '90%',
+    padding: 20,
+    elevation: 5,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1e293b',
+  },
+  modalProfileSection: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  modalAvatarContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#f0f7ff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+    overflow: 'hidden',
+    borderWidth: 3,
+    borderColor: '#2c5a73',
+  },
+  modalAvatar: {
+    width: '100%',
+    height: '100%',
+  },
+  modalName: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#1e293b',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 25,
+    gap: 6,
+  },
+  modalStatusText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  modalSection: {
+    marginBottom: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+  },
+  modalSectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1e293b',
+    marginBottom: 12,
+  },
+  modalInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+    gap: 8,
+  },
+  modalInfoValue: {
+    flex: 1,
+    fontSize: 14,
+    color: '#1e293b',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 10,
+    marginTop: 10,
+    marginBottom: 20,
+  },
+  modalActionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 6,
+  },
+  deleteModalButton: {
+    backgroundColor: '#DC2626',
+  },
+  modalActionText: {
+    color: '#fff',
+    fontSize: 14,
     fontWeight: '600',
   },
 });

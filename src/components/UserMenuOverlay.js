@@ -121,7 +121,7 @@ export default function UserMenuOverlay({ visible, onClose, onNavigate }) {
 
                         {/* Location & Balance Row */}
                         <View style={styles.infoRow}>
-                            {/* <TouchableOpacity
+                            <TouchableOpacity
                                 style={styles.locationPill}
                                 onPress={() => {
                                     onClose();
@@ -133,7 +133,7 @@ export default function UserMenuOverlay({ visible, onClose, onNavigate }) {
                                     {getLocationText()}
                                 </Text>
                                 <Ionicons name="chevron-down" size={14} color="#fff" />
-                            </TouchableOpacity> */}
+                            </TouchableOpacity>
 
                             <View style={styles.balancePill}>
                                 <MaterialCommunityIcons name="wallet" size={14} color="#FFD700" />
@@ -455,7 +455,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         borderBottomLeftRadius:40,
         borderBottomRightRadius:30,
-        height:250
+        height:260
     },
     closeBtn: {
         position: "absolute",

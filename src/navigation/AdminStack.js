@@ -94,7 +94,7 @@
           name="TransactionList"
           component={TransactionListScreen}
           options={{
-            headerShown: true,
+            headerShown: false,
             title: "Transactions",
           }}
         />

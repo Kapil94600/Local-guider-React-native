@@ -921,9 +921,9 @@ export default function GuiderListScreen({ navigation, route }) {
         </View>
 
         {/* Results Count */}
-        <Text style={styles.resultsCount}>
+        {/* <Text style={styles.resultsCount}>
           {filteredGuiders.length} guides found
-        </Text>
+        </Text> */}
       </LinearGradient>
 
       {/* Guiders List */}

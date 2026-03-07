@@ -37,6 +37,13 @@ export default function PlaceListScreen({ navigation, route }) {
   const [selectedPlace, setSelectedPlace] = useState(null);
   const [detailsModal, setDetailsModal] = useState(false);
   
+  // New states for guides and photographers
+  const [placeGuides, setPlaceGuides] = useState([]);
+  const [placePhotographers, setPlacePhotographers] = useState([]);
+  const [loadingGuides, setLoadingGuides] = useState(false);
+  const [loadingPhotographers, setLoadingPhotographers] = useState(false);
+  const [activeTab, setActiveTab] = useState("guides"); // 'guides' or 'photographers'
+  
   // Filter states
   const [sortBy, setSortBy] = useState("rating");
   const [minRating, setMinRating] = useState(0);
@@ -118,6 +125,58 @@ export default function PlaceListScreen({ navigation, route }) {
     }
   };
 
+  // Fetch guides for selected place
+  const fetchPlaceGuides = async (placeId) => {
+    if (!placeId) return;
+    
+    setLoadingGuides(true);
+    try {
+      const response = await api.post(API.GET_GUIDERS_BY_PLACE_ID, {
+        placeId: placeId,
+        page: 1,
+        perPage: 10,
+        sortBy: "rating" // Sort by rating by default
+      });
+
+      if (response.data?.status) {
+        setPlaceGuides(response.data.data || []);
+      } else {
+        setPlaceGuides([]);
+      }
+    } catch (error) {
+      console.error("Error fetching guides:", error);
+      setPlaceGuides([]);
+    } finally {
+      setLoadingGuides(false);
+    }
+  };
+
+  // Fetch photographers for selected place
+  const fetchPlacePhotographers = async (placeId) => {
+    if (!placeId) return;
+    
+    setLoadingPhotographers(true);
+    try {
+      const response = await api.post(API.GET_PHOTOGRAPHERS_BY_PLACE_ID, {
+        placeId: placeId,
+        page: 1,
+        perPage: 10,
+        sortBy: "rating" // Sort by rating by default
+      });
+
+      if (response.data?.status) {
+        setPlacePhotographers(response.data.data || []);
+      } else {
+        setPlacePhotographers([]);
+      }
+    } catch (error) {
+      console.error("Error fetching photographers:", error);
+      setPlacePhotographers([]);
+    } finally {
+      setLoadingPhotographers(false);
+    }
+  };
+
   const loadMore = () => {
     if (hasMore && !loadingMore) {
       fetchPlaces(page + 1, true);
@@ -132,7 +191,26 @@ export default function PlaceListScreen({ navigation, route }) {
 
   const handlePlacePress = (place) => {
     setSelectedPlace(place);
+    setActiveTab("guides"); // Reset to guides tab
+    setPlaceGuides([]);
+    setPlacePhotographers([]);
     setDetailsModal(true);
+    
+    // Fetch guides and photographers for this place
+    fetchPlaceGuides(place.id);
+    fetchPlacePhotographers(place.id);
+  };
+
+  const handleBookAppointment = (professional, type) => {
+    setDetailsModal(false);
+    navigation.navigate("BookAppointment", {
+      professionalId: professional.id,
+      professionalType: type, // 'guider' or 'photographer'
+      professionalName: type === 'guider' ? professional.firmName : professional.firmName,
+      placeId: selectedPlace.id,
+      placeName: selectedPlace.placeName,
+      serviceCost: professional.serviceCost || 0,
+    });
   };
 
   const getImageUrl = (path) => {
@@ -244,11 +322,90 @@ export default function PlaceListScreen({ navigation, route }) {
             colors={['#2c5a73', '#1e3c4f']}
             style={styles.exploreBadge}
           >
-            <Text style={styles.exploreBadgeText}>Explore</Text>
+            <Text style={styles.exploreBadgeText}>View Details</Text>
           </LinearGradient>
         </View>
       </View>
     </TouchableOpacity>
+  );
+
+  const renderProfessionalCard = (item, type) => (
+    <View key={item.id} style={styles.professionalCard}>
+      <View style={styles.professionalHeader}>
+        <View style={styles.professionalImageContainer}>
+          {item.profileImage ? (
+            <Image
+              source={{ uri: getImageUrl(item.profileImage) }}
+              style={styles.professionalImage}
+            />
+          ) : (
+            <LinearGradient
+              colors={['#2c5a73', '#1e3c4f']}
+              style={styles.professionalImagePlaceholder}
+            >
+              <Ionicons 
+                name={type === 'guider' ? "people-outline" : "camera-outline"} 
+                size={24} 
+                color="#fff" 
+              />
+            </LinearGradient>
+          )}
+        </View>
+        
+        <View style={styles.professionalInfo}>
+          <Text style={styles.professionalName}>{item.firmName}</Text>
+          <View style={styles.professionalRating}>
+            {renderRating(item.rating)}
+            <Text style={styles.professionalRatingText}>
+              ({item.rating?.toFixed(1) || "0.0"})
+            </Text>
+          </View>
+          <Text style={styles.professionalExperience}>
+            {item.experience || 0} years experience
+          </Text>
+        </View>
+        
+        <View style={styles.professionalPrice}>
+          <Text style={styles.priceAmount}>₹{item.serviceCost || 0}</Text>
+          <Text style={styles.priceLabel}>/hour</Text>
+        </View>
+      </View>
+
+      <Text style={styles.professionalDescription} numberOfLines={2}>
+        {item.description || "No description available"}
+      </Text>
+
+      <View style={styles.professionalFooter}>
+        <View style={styles.professionalStats}>
+          <View style={styles.professionalStat}>
+            <Ionicons name="briefcase-outline" size={14} color="#64748b" />
+            <Text style={styles.professionalStatText}>
+              {item.totalAppointments || 0} bookings
+            </Text>
+          </View>
+          {item.languages && (
+            <View style={styles.professionalStat}>
+              <Ionicons name="language-outline" size={14} color="#64748b" />
+              <Text style={styles.professionalStatText}>
+                {item.languages}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        <TouchableOpacity
+          style={styles.bookButton}
+          onPress={() => handleBookAppointment(item, type)}
+        >
+          <LinearGradient
+            colors={type === 'guider' ? ["#2c5a73", "#1e3c4f"] : ["#8B5CF6", "#7C3AED"]}
+            style={styles.bookButtonGradient}
+          >
+            <Text style={styles.bookButtonText}>Book Now</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 
   const renderFilterModal = () => (
@@ -540,40 +697,80 @@ export default function PlaceListScreen({ navigation, route }) {
                 </View>
               </View>
 
-              {/* Action Buttons */}
-              <View style={styles.detailActions}>
+              {/* Tabs for Guides and Photographers */}
+              <View style={styles.tabContainer}>
                 <TouchableOpacity
-                  style={styles.detailGuideBtn}
-                  onPress={() => {
-                    setDetailsModal(false);
-                    navigation.navigate("GuiderList", { placeId: selectedPlace.id });
-                  }}
+                  style={[styles.tab, activeTab === "guides" && styles.activeTab]}
+                  onPress={() => setActiveTab("guides")}
                 >
-                  <LinearGradient
-                    colors={["#2c5a73", "#1e3c4f"]}
-                    style={styles.detailBtnGradient}
-                  >
-                    <Ionicons name="people-outline" size={18} color="#fff" />
-                    <Text style={styles.detailBtnText}>Find Guides</Text>
-                  </LinearGradient>
+                  <Ionicons 
+                    name="people-outline" 
+                    size={18} 
+                    color={activeTab === "guides" ? "#2c5a73" : "#64748b"} 
+                  />
+                  <Text style={[styles.tabText, activeTab === "guides" && styles.activeTabText]}>
+                    Guides ({placeGuides.length})
+                  </Text>
                 </TouchableOpacity>
-
+                
                 <TouchableOpacity
-                  style={styles.detailPhotographerBtn}
-                  onPress={() => {
-                    setDetailsModal(false);
-                    navigation.navigate("PhotographerList", { placeId: selectedPlace.id });
-                  }}
+                  style={[styles.tab, activeTab === "photographers" && styles.activeTab]}
+                  onPress={() => setActiveTab("photographers")}
                 >
-                  <LinearGradient
-                    colors={["#8B5CF6", "#7C3AED"]}
-                    style={styles.detailBtnGradient}
-                  >
-                    <Ionicons name="camera-outline" size={18} color="#fff" />
-                    <Text style={styles.detailBtnText}>Find Photographers</Text>
-                  </LinearGradient>
+                  <Ionicons 
+                    name="camera-outline" 
+                    size={18} 
+                    color={activeTab === "photographers" ? "#2c5a73" : "#64748b"} 
+                  />
+                  <Text style={[styles.tabText, activeTab === "photographers" && styles.activeTabText]}>
+                    Photographers ({placePhotographers.length})
+                  </Text>
                 </TouchableOpacity>
               </View>
+
+              {/* Guides List */}
+              {activeTab === "guides" && (
+                <View style={styles.professionalsList}>
+                  {loadingGuides ? (
+                    <View style={styles.loadingContainer}>
+                      <ActivityIndicator size="small" color="#2c5a73" />
+                      <Text style={styles.loadingText}>Loading guides...</Text>
+                    </View>
+                  ) : placeGuides.length > 0 ? (
+                    placeGuides.map(guide => renderProfessionalCard(guide, 'guider'))
+                  ) : (
+                    <View style={styles.emptyProfessionals}>
+                      <Ionicons name="people-outline" size={48} color="#cbd5e1" />
+                      <Text style={styles.emptyProfessionalsTitle}>No Guides Available</Text>
+                      <Text style={styles.emptyProfessionalsText}>
+                        There are no guides for this place yet
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* Photographers List */}
+              {activeTab === "photographers" && (
+                <View style={styles.professionalsList}>
+                  {loadingPhotographers ? (
+                    <View style={styles.loadingContainer}>
+                      <ActivityIndicator size="small" color="#8B5CF6" />
+                      <Text style={styles.loadingText}>Loading photographers...</Text>
+                    </View>
+                  ) : placePhotographers.length > 0 ? (
+                    placePhotographers.map(photographer => renderProfessionalCard(photographer, 'photographer'))
+                  ) : (
+                    <View style={styles.emptyProfessionals}>
+                      <Ionicons name="camera-outline" size={48} color="#cbd5e1" />
+                      <Text style={styles.emptyProfessionalsTitle}>No Photographers Available</Text>
+                      <Text style={styles.emptyProfessionalsText}>
+                        There are no photographers for this place yet
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              )}
             </ScrollView>
           )}
         </View>
@@ -834,6 +1031,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    padding: 20,
   },
   loadingText: {
     marginTop: 12,
@@ -1151,34 +1349,161 @@ const styles = StyleSheet.create({
     color: "#64748b",
     marginTop: 2,
   },
-  detailActions: {
+
+  // Tab Styles
+  tabContainer: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    backgroundColor: "#f1f5f9",
+    borderRadius: 12,
+    padding: 4,
     marginBottom: 20,
   },
-  detailGuideBtn: {
+  tab: {
     flex: 1,
-    marginRight: 8,
-    borderRadius: 12,
-    overflow: "hidden",
-  },
-  detailPhotographerBtn: {
-    flex: 1,
-    marginLeft: 8,
-    borderRadius: 12,
-    overflow: "hidden",
-  },
-  detailBtnGradient: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 14,
-    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    gap: 6,
   },
-  detailBtnText: {
+  activeTab: {
+    backgroundColor: "#fff",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  tabText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#64748b",
+  },
+  activeTabText: {
+    color: "#2c5a73",
+    fontWeight: "600",
+  },
+
+  // Professional Card Styles
+  professionalsList: {
+    marginBottom: 20,
+  },
+  professionalCard: {
+    backgroundColor: "#f8fafc",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  professionalHeader: {
+    flexDirection: "row",
+    marginBottom: 12,
+  },
+  professionalImageContainer: {
+    marginRight: 12,
+  },
+  professionalImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+  },
+  professionalImagePlaceholder: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  professionalInfo: {
+    flex: 1,
+  },
+  professionalName: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#1e293b",
+    marginBottom: 4,
+  },
+  professionalRating: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  professionalRatingText: {
+    fontSize: 12,
+    color: "#64748b",
+    marginLeft: 4,
+  },
+  professionalExperience: {
+    fontSize: 12,
+    color: "#64748b",
+  },
+  professionalPrice: {
+    alignItems: "flex-end",
+  },
+  priceAmount: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#2c5a73",
+  },
+  priceLabel: {
+    fontSize: 11,
+    color: "#64748b",
+  },
+  professionalDescription: {
+    fontSize: 13,
+    color: "#475569",
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  professionalFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  professionalStats: {
+    flex: 1,
+  },
+  professionalStat: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  professionalStatText: {
+    fontSize: 12,
+    color: "#64748b",
+    marginLeft: 6,
+  },
+  bookButton: {
+    borderRadius: 8,
+    overflow: "hidden",
+  },
+  bookButtonGradient: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    alignItems: "center",
+  },
+  bookButtonText: {
     color: "#fff",
     fontSize: 13,
     fontWeight: "600",
-    marginLeft: 6,
+  },
+  emptyProfessionals: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 40,
+  },
+  emptyProfessionalsTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#1e293b",
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  emptyProfessionalsText: {
+    fontSize: 13,
+    color: "#64748b",
+    textAlign: "center",
   },
 });

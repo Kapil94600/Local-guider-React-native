@@ -18,7 +18,7 @@ import api from "../../api/apiClient";
 
 const BASE_URL = "https://localguider.sinfode.com";
 
-/* ================= 🔥 FIXED: IMAGE URL - BACKEND KA SAHI ENDPOINT ================= */
+/* ================= 🔥 FIXED: IMAGE URL - CHECKING MULTIPLE POSSIBLE PATHS ================= */
 const getImageUrl = (path) => {
   if (!path) return null;
   if (path.startsWith("http")) return path;
@@ -26,22 +26,62 @@ const getImageUrl = (path) => {
   // Clean the path - remove any leading slashes
   const cleanPath = path.replace(/^\/+/, "");
   
-  // ✅ BACKEND KA EXACT ENDPOINT - YAHI KAM KAREGA!
-  return `${BASE_URL}/files/${cleanPath}`;
+  // Try multiple possible paths
+  const possiblePaths = [
+    `${BASE_URL}/files/${cleanPath}`,                    // /files/filename.jpg
+    `${BASE_URL}/api/image/download/${cleanPath}`,       // /api/image/download/filename.jpg
+    `${BASE_URL}/uploads/${cleanPath}`,                  // /uploads/filename.jpg
+    `${BASE_URL}/images/${cleanPath}`,                   // /images/filename.jpg
+  ];
+  
+  console.log(`🖼️ Trying paths for: ${cleanPath}`);
+  return possiblePaths[0]; // Return first path, we'll let the Image component handle errors
 };
 
-/* ================= SAFE IMAGE COMPONENT ================= */
+/* ================= SAFE IMAGE COMPONENT WITH FALLBACKS ================= */
 const SafeImage = ({ path, style, fallbackIcon, fallbackText }) => {
   const [hasError, setHasError] = useState(false);
-  const imageUrl = getImageUrl(path);
+  const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
+  
+  // Generate possible URLs
+  const getPossibleUrls = (imagePath) => {
+    if (!imagePath) return [];
+    const cleanPath = imagePath.replace(/^\/+/, "");
+    return [
+      `${BASE_URL}/files/${cleanPath}`,
+      `${BASE_URL}/api/image/download/${cleanPath}`,
+      `${BASE_URL}/uploads/${cleanPath}`,
+      `${BASE_URL}/images/${cleanPath}`,
+    ];
+  };
+
+  const possibleUrls = getPossibleUrls(path);
+  const currentUrl = possibleUrls[currentUrlIndex];
 
   useEffect(() => {
     if (path) {
-      console.log(`🖼️ Loading image: ${imageUrl}`);
+      console.log(`🖼️ Loading image: ${path}`);
+      console.log(`🖼️ Trying URL ${currentUrlIndex + 1}/${possibleUrls.length}: ${currentUrl}`);
     }
+    setHasError(false);
+    setCurrentUrlIndex(0);
   }, [path]);
 
-  if (!path || hasError) {
+  const handleError = () => {
+    console.log(`❌ Image failed: ${currentUrl}`);
+    
+    // Try next URL if available
+    if (currentUrlIndex < possibleUrls.length - 1) {
+      console.log(`🔄 Trying next URL...`);
+      setCurrentUrlIndex(currentUrlIndex + 1);
+    } else {
+      // All URLs failed
+      console.log(`❌ All URLs failed for: ${path}`);
+      setHasError(true);
+    }
+  };
+
+  if (!path || hasError || !currentUrl) {
     return (
       <View style={[style, styles.imagePlaceholder]}>
         <Icon name={fallbackIcon || "image-off"} size={30} color="#94a3b8" />
@@ -52,13 +92,11 @@ const SafeImage = ({ path, style, fallbackIcon, fallbackText }) => {
 
   return (
     <Image
-      source={{ uri: imageUrl }}
+      key={currentUrl} // Force re-render when URL changes
+      source={{ uri: currentUrl }}
       style={style}
       resizeMode="cover"
-      onError={() => {
-        console.log(`❌ Image failed: ${imageUrl}`);
-        setHasError(true);
-      }}
+      onError={handleError}
     />
   );
 };
@@ -569,8 +607,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#e2e8f0",
     borderStyle: "dashed",
+    borderRadius: 8,
   },
-  placeholderText: { fontSize: 11, color: "#94a3b8", marginTop: 4 },
+  placeholderText: { fontSize: 11, color: "#94a3b8", marginTop: 4, textAlign: "center" },
   
   serviceItem: { backgroundColor: "#f8fafc", padding: 12, borderRadius: 8, marginBottom: 8 },
   serviceTitle: { fontSize: 15, fontWeight: "600", color: "#1e293b", marginBottom: 4 },
@@ -581,13 +620,12 @@ const styles = StyleSheet.create({
   noDataText: { fontSize: 14, color: "#94a3b8", fontStyle: "italic" },
   
   badge: {
-    backgroundColor: "#FEF3C7",
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
     alignSelf: "flex-start",
   },
-  badgeText: { fontSize: 11, fontWeight: "bold", color: "#9A3412" },
+  badgeText: { fontSize: 11, fontWeight: "bold" },
   statusRow: { flexDirection: "row", alignItems: "center", marginTop: 4 },
   statusLabel: { fontSize: 14, color: "#64748b", fontWeight: "500", width: 100 },
   
@@ -617,6 +655,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#f8fafc",
     minHeight: 80,
     marginBottom: 16,
+    textAlignVertical: 'top',
   },
   
   declineBtn: {
