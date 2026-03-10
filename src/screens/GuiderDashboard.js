@@ -153,6 +153,7 @@ export default function GuiderDashboard({ navigation }) {
     }
   };
 
+  // ✅ Load guider details and set wallet from balance field
   const loadGuiderDetails = async () => {
     try {
       const response = await api.post(API.GET_GUIDERS_DETAILS, {
@@ -160,6 +161,8 @@ export default function GuiderDashboard({ navigation }) {
       });
       if (response.data?.status) {
         setProfile(response.data.data);
+        // ✅ Wallet comes from guider's balance field
+        setWallet(response.data.data?.balance || 0);
         setIsActive(response.data.data?.active || false);
         setEditForm({
           firmName: response.data.data?.firmName || "",
@@ -183,16 +186,27 @@ export default function GuiderDashboard({ navigation }) {
     }
   };
 
+  // ✅ Load bookings for all statuses (because backend defaults to COMPLETED)
   const loadBookings = async () => {
     try {
-      const response = await api.post(API.GET_APPOINTMENTS, {
-        guiderId: user?.id,
-        page: 1,
-        perPage: 50
-      });
-      if (response.data?.status) {
-        setBookings(response.data.data || []);
+      const statuses = ["REQUESTED", "ACCEPTED", "COMPLETED", "CANCELLED", "REJECTED"];
+      let allBookings = [];
+
+      for (const status of statuses) {
+        const response = await api.post(API.GET_APPOINTMENTS, {
+          guiderId: user?.id,
+          status: status,
+          page: 1,
+          perPage: 50
+        });
+        if (response.data?.status) {
+          allBookings = [...allBookings, ...(response.data.data || [])];
+        }
       }
+
+      // Sort by date (newest first)
+      allBookings.sort((a, b) => new Date(b.createdOn) - new Date(a.createdOn));
+      setBookings(allBookings);
     } catch (error) {
       console.error("Error loading bookings:", error);
     }
@@ -225,6 +239,7 @@ export default function GuiderDashboard({ navigation }) {
     }
   };
 
+  // ✅ Transactions – only for history, wallet is already set from profile
   const loadTransactions = async () => {
     try {
       const response = await api.post(API.GET_TRANSACTION, {
@@ -233,10 +248,7 @@ export default function GuiderDashboard({ navigation }) {
       });
       if (response.data?.status) {
         setTransactions(response.data.data || []);
-        const totalEarnings = response.data.data
-          .filter(t => t.paymentStatus === "SUCCESS")
-          .reduce((sum, t) => sum + (t.amount || 0), 0);
-        setWallet(totalEarnings);
+        // ❌ Do NOT recalculate wallet here – it's already set from profile
       }
     } catch (error) {
       console.error("Error loading transactions:", error);
@@ -633,7 +645,7 @@ export default function GuiderDashboard({ navigation }) {
     switch(status) {
       case 'COMPLETED': return '#10B981';
       case 'ACCEPTED': return '#3B82F6';
-      case 'PENDING': return '#F59E0B';
+      case 'REQUESTED': return '#F59E0B';
       case 'REJECTED': return '#EF4444';
       case 'CANCELLED': return '#6B7280';
       default: return '#6B7280';
@@ -644,7 +656,7 @@ export default function GuiderDashboard({ navigation }) {
     switch(status) {
       case 'COMPLETED': return '#D1FAE5';
       case 'ACCEPTED': return '#DBEAFE';
-      case 'PENDING': return '#FEF3C7';
+      case 'REQUESTED': return '#FEF3C7';
       case 'REJECTED': return '#FEE2E2';
       case 'CANCELLED': return '#F3F4F6';
       default: return '#F3F4F6';
@@ -703,42 +715,8 @@ export default function GuiderDashboard({ navigation }) {
                 </View>
               )}
             </TouchableOpacity>
-            
-            {/* <TouchableOpacity 
-              style={styles.profileBtn}
-              onPress={() => setEditProfileModal(true)}
-            >
-              {profile?.featuredImage ? (
-                <Image 
-                  source={{ uri: getImageUrl(profile.featuredImage) }} 
-                  style={styles.headerProfileImage}
-                />
-              ) : (
-                <View style={styles.headerProfilePlaceholder}>
-                  <Text style={styles.headerProfileInitial}>
-                    {profile?.firmName?.charAt(0) || profile?.name?.charAt(0) || 'G'}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity> */}
           </View>
         </View>
-
-        {/* <View style={styles.verificationContainer}>
-          <View style={styles.verificationBadge}>
-            <Ionicons 
-              name={profile?.approvalStatus === 'APPROVED' ? 'checkmark-circle' : 'time'} 
-              size={16} 
-              color={profile?.approvalStatus === 'APPROVED' ? '#10B981' : '#F59E0B'} 
-            />
-            <Text style={[
-              styles.verificationText,
-              { color: profile?.approvalStatus === 'APPROVED' ? '#10B981' : '#F59E0B' }
-            ]}>
-              {profile?.approvalStatus || 'PENDING'}
-            </Text>
-          </View>
-        </View> */}
       </SafeAreaView>
     </LinearGradient>
   );

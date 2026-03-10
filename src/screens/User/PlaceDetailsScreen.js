@@ -7,7 +7,6 @@ import {
   StyleSheet,
   Image,
   ActivityIndicator,
-  Dimensions,
   Alert,
   RefreshControl,
 } from "react-native";
@@ -18,7 +17,6 @@ import { LocationContext } from "../../context/LocationContext";
 import api from "../../api/apiClient";
 import { API } from "../../api/endpoints";
 
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const BASE_URL = "https://localguider.sinfode.com";
 
 const getImageUrl = (path) => {
@@ -50,7 +48,7 @@ const RatingStars = ({ rating, size = 14, showCount = false, count = 0 }) => {
   return (
     <View style={styles.ratingStarsContainer}>
       {stars}
-      {showCount && <Text style={styles.ratingCount}>{count} Reviews</Text>}
+      {showCount && <Text style={styles.ratingCount}>({count} reviews)</Text>}
     </View>
   );
 };
@@ -61,15 +59,13 @@ const ReviewCard = ({ review }) => {
     if (!dateString) return "";
     try {
       const date = new Date(dateString);
-      const day = date.getDate().toString().padStart(2, "0");
-      const month = (date.getMonth() + 1).toString().padStart(2, "0");
-      const year = date.getFullYear();
-      let hours = date.getHours();
-      const minutes = date.getMinutes().toString().padStart(2, "0");
-      const ampm = hours >= 12 ? "PM" : "AM";
-      hours = hours % 12;
-      hours = hours ? hours : 12;
-      return `${day}/${month}/${year} | ${hours}:${minutes} ${ampm}`;
+      return date.toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
     } catch {
       return "";
     }
@@ -160,7 +156,6 @@ export default function PlaceDetailsScreen({ route, navigation }) {
   const [reviewsError, setReviewsError] = useState(false);
 
   useEffect(() => {
-    console.log("PlaceDetails mounted with placeId:", placeId);
     if (!placeId) {
       Alert.alert("Error", "Place ID not found", [
         { text: "Go Back", onPress: () => navigation.goBack() },
@@ -187,7 +182,6 @@ export default function PlaceDetailsScreen({ route, navigation }) {
         latitude: location?.latitude,
         longitude: location?.longitude,
       });
-
       if (response?.data?.status) {
         const placesData = response.data.data || [];
         const placeData = placesData.find((p) => p.id === placeId) || placesData[0];
@@ -206,50 +200,23 @@ export default function PlaceDetailsScreen({ route, navigation }) {
   const fetchReviews = async () => {
     try {
       setReviewsError(false);
-      
-      // Check if endpoint exists
-      if (!API.GET_ALL_REVIEW) {
-        console.error("❌ API.GET_ALL_REVIEW is not defined in endpoints.js");
-        setReviewsError(true);
-        return;
-      }
-
-      // Check if placeId exists
-      if (!placeId) {
-        console.error("❌ placeId is null or undefined");
-        setReviewsError(true);
-        return;
-      }
-
-      console.log("📡 Fetching reviews for placeId:", placeId);
-
-      const response = await api.post(API.GET_ALL_REVIEW, {
+      const response = await api.post(API.GET_REVIEWS_BY_ID, {
         placeId: Number(placeId),
-        page: 1,
-        perPage: 20,
       });
-
-      console.log("✅ Reviews API response:", response.data);
-
       if (response?.data?.status === true) {
         let reviewsData = response.data.data || [];
-        
-        // Sort reviews based on selected sort option
+        // Sort based on selected sort option
         if (sortBy === "recent") {
           reviewsData.sort((a, b) => new Date(b.createdOn) - new Date(a.createdOn));
         } else {
           reviewsData.sort((a, b) => (b.rating || 0) - (a.rating || 0));
         }
-        
         setReviews(reviewsData);
       } else {
         setReviews([]);
-        if (response?.data?.message) {
-          console.warn("⚠️ Reviews fetch message:", response.data.message);
-        }
       }
     } catch (error) {
-      console.error("❌ Error fetching reviews:", error);
+      console.error("Error fetching reviews:", error);
       setReviewsError(true);
       setReviews([]);
     }
@@ -258,21 +225,11 @@ export default function PlaceDetailsScreen({ route, navigation }) {
   const fetchGuiders = async () => {
     try {
       setLoadingGuiders(true);
-      if (!API.GET_GUIDERS_BY_PLACE_ID) {
-        console.error("API.GET_GUIDERS_BY_PLACE_ID is not defined");
-        return;
-      }
-
       const response = await api.post(API.GET_GUIDERS_BY_PLACE_ID, {
         placeId: placeId,
-        status: "APPROVED",
-        sortBy: "rating",
-        limit: 10,
       });
-
       if (response?.data?.status === true) {
-        const guidersData = response.data.data || [];
-        setGuiders(guidersData);
+        setGuiders(response.data.data || []);
       } else {
         setGuiders([]);
       }
@@ -287,21 +244,11 @@ export default function PlaceDetailsScreen({ route, navigation }) {
   const fetchPhotographers = async () => {
     try {
       setLoadingPhotographers(true);
-      if (!API.GET_PHOTOGRAPHERS_BY_PLACE_ID) {
-        console.error("API.GET_PHOTOGRAPHERS_BY_PLACE_ID is not defined");
-        return;
-      }
-
       const response = await api.post(API.GET_PHOTOGRAPHERS_BY_PLACE_ID, {
         placeId: placeId,
-        status: "APPROVED",
-        sortBy: "rating",
-        limit: 10,
       });
-
       if (response?.data?.status === true) {
-        const photographersData = response.data.data || [];
-        setPhotographers(photographersData);
+        setPhotographers(response.data.data || []);
       } else {
         setPhotographers([]);
       }
@@ -323,17 +270,13 @@ export default function PlaceDetailsScreen({ route, navigation }) {
     const newSort = sortBy === "recent" ? "rating" : "recent";
     setSortBy(newSort);
     // Re-sort existing reviews
-    if (reviews.length > 0) {
-      const sorted = [...reviews];
-      if (newSort === "recent") {
-        sorted.sort((a, b) => new Date(b.createdOn) - new Date(a.createdOn));
-      } else {
-        sorted.sort((a, b) => (b.rating || 0) - (a.rating || 0));
-      }
-      setReviews(sorted);
+    const sorted = [...reviews];
+    if (newSort === "recent") {
+      sorted.sort((a, b) => new Date(b.createdOn) - new Date(a.createdOn));
     } else {
-      fetchReviews();
+      sorted.sort((a, b) => (b.rating || 0) - (a.rating || 0));
     }
+    setReviews(sorted);
   };
 
   const toggleDescription = () => {
@@ -470,13 +413,18 @@ export default function PlaceDetailsScreen({ route, navigation }) {
               <Text style={styles.loadingMoreText}>Loading guides...</Text>
             </View>
           ) : guiders.length > 0 ? (
-            guiders.slice(0, 3).map((guider, index) => (
+            guiders.map((guider, index) => (
               <PersonCard
                 key={guider.id}
                 item={guider}
                 type="guider"
                 rank={index + 1}
-                onPress={() => navigation.navigate("GuiderDetails", { guiderId: guider.id })}
+                onPress={() => navigation.navigate("ProfessionalDetails", {
+                  professionalId: guider.id,
+                  professionalType: 'guider',
+                  placeId: place.id,
+                  placeName: place.placeName,
+                })}
               />
             ))
           ) : (
@@ -501,15 +449,18 @@ export default function PlaceDetailsScreen({ route, navigation }) {
               <Text style={styles.loadingMoreText}>Loading photographers...</Text>
             </View>
           ) : photographers.length > 0 ? (
-            photographers.slice(0, 3).map((photographer, index) => (
+            photographers.map((photographer, index) => (
               <PersonCard
                 key={photographer.id}
                 item={photographer}
                 type="photographer"
                 rank={index + 1}
-                onPress={() =>
-                  navigation.navigate("PhotographerDetails", { photographerId: photographer.id })
-                }
+                onPress={() => navigation.navigate("ProfessionalDetails", {
+                  professionalId: photographer.id,
+                  professionalType: 'photographer',
+                  placeId: place.id,
+                  placeName: place.placeName,
+                })}
               />
             ))
           ) : (
@@ -527,315 +478,60 @@ export default function PlaceDetailsScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f8fafc",
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: "#64748b",
-  },
-  loadingMoreContainer: {
-    padding: 20,
-    alignItems: "center",
-  },
-  loadingMoreText: {
-    marginTop: 8,
-    fontSize: 14,
-    color: "#64748b",
-  },
-  errorContainer: {
-    padding: 20,
-    alignItems: "center",
-  },
-  errorText: {
-    fontSize: 14,
-    color: "#ef4444",
-    marginTop: 8,
-  },
-  errorButton: {
-    backgroundColor: "#2c5a73",
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  errorButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingTop: 46,
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  headerTitle: {
-    flex: 1,
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#fff",
-    textAlign: "center",
-  },
-  rowContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 16,
-    gap: 16,
-  },
-  coverContainer: {
-    width: 160,
-    height: 180,
-    position: "relative",
-    borderRadius: 14,
-    overflow: "hidden",
-    borderWidth: 6,
-    borderColor: "#2c5a73",
-  },
-  coverImage: {
-    width: "100%",
-    height: "100%",
-  },
-  coverPlaceholder: {
-    width: "100%",
-    height: "100%",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  textContentContainer: {
-    flex: 1,
-    justifyContent: "center",
-  },
-  placeNameText: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: "#000000",
-    marginBottom: 12,
-    textAlign: "center",
-  },
-  infoRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 8,
-    gap: 8,
-  },
-  infoText: {
-    fontSize: 14,
-    color: "#4b5563",
-    textAlign: "center",
-    includeFontPadding: false,
-    lineHeight: 20,
-  },
-  ratingStarsContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 8,
-    gap: 2,
-  },
-  ratingCount: {
-    fontSize: 12,
-    color: "#64748b",
-    marginLeft: 4,
-  },
-  descriptionContainer: {
-    padding: 20,
-    backgroundColor: "#fff",
-    borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
-  },
-  descriptionText: {
-    fontSize: 14,
-    color: "#475569",
-    lineHeight: 20,
-  },
-  readMoreButton: {
-    marginTop: 8,
-    alignSelf: "flex-start",
-  },
-  readMoreText: {
-    fontSize: 14,
-    color: "#2c5a73",
-    fontWeight: "600",
-  },
-  reviewsSection: {
-    padding: 20,
-    backgroundColor: "#fff",
-    marginTop: 8,
-  },
-  personsSection: {
-    padding: 20,
-    backgroundColor: "#fff",
-    marginTop: 8,
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#1e293b",
-  },
-  sortButton: {
-    padding: 4,
-  },
-  sortButtonText: {
-    fontSize: 13,
-    color: "#2c5a73",
-    fontWeight: "500",
-  },
-  reviewCard: {
-    backgroundColor: "#f8fafc",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-  },
-  reviewHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  reviewerInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  reviewerAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#2c5a73",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
-  },
-  reviewerInitial: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#fff",
-  },
-  reviewerName: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#1e293b",
-  },
-  reviewDateTime: {
-    fontSize: 11,
-    color: "#64748b",
-    marginTop: 2,
-  },
-  reviewTitle: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#1e293b",
-    marginBottom: 4,
-  },
-  reviewText: {
-    fontSize: 13,
-    color: "#475569",
-    lineHeight: 18,
-  },
-  personCard: {
-    flexDirection: "row",
-    backgroundColor: "#f8fafc",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-    alignItems: "center",
-  },
-  personRank: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: "#2c5a73",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
-  },
-  personRankText: {
-    fontSize: 14,
-    fontWeight: "bold",
-    color: "#fff",
-  },
-  personImageContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    overflow: "hidden",
-    marginRight: 12,
-  },
-  personImage: {
-    width: "100%",
-    height: "100%",
-  },
-  personImagePlaceholder: {
-    width: "100%",
-    height: "100%",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  personInitial: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#fff",
-  },
-  personInfo: {
-    flex: 1,
-  },
-  personName: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#1e293b",
-    marginBottom: 2,
-  },
-  personLocation: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 4,
-  },
-  personLocationText: {
-    fontSize: 12,
-    color: "#64748b",
-    marginLeft: 4,
-  },
-  personBadge: {
-    backgroundColor: "#e6f0f5",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 12,
-    alignSelf: "flex-start",
-    marginTop: 4,
-  },
-  personBadgeText: {
-    fontSize: 10,
-    color: "#2c5a73",
-    fontWeight: "500",
-  },
-  emptyContainer: {
-    padding: 30,
-    alignItems: "center",
-  },
-  emptyText: {
-    fontSize: 14,
-    color: "#94a3b8",
-    marginTop: 8,
-  },
+  container: { flex: 1, backgroundColor: "#f8fafc" },
+  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+  loadingText: { marginTop: 12, fontSize: 16, color: "#64748b" },
+  loadingMoreContainer: { padding: 20, alignItems: "center" },
+  loadingMoreText: { marginTop: 8, fontSize: 14, color: "#64748b" },
+  errorContainer: { padding: 20, alignItems: "center" },
+  errorText: { fontSize: 14, color: "#ef4444", marginTop: 8 },
+  errorButton: { backgroundColor: "#2c5a73", paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8 },
+  errorButtonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: 46, paddingHorizontal: 16, paddingBottom: 16 },
+  backButton: { width: 40, height: 40, justifyContent: "center", alignItems: "center" },
+  headerTitle: { flex: 1, fontSize: 18, fontWeight: "600", color: "#fff", textAlign: "center" },
+  rowContainer: { flexDirection: "row", alignItems: "center", padding: 16, gap: 16 },
+  coverContainer: { width: 160, height: 180, borderRadius: 14, overflow: "hidden", borderWidth: 6, borderColor: "#2c5a73" },
+  coverImage: { width: "100%", height: "100%" },
+  coverPlaceholder: { width: "100%", height: "100%", justifyContent: "center", alignItems: "center" },
+  textContentContainer: { flex: 1, justifyContent: "center" },
+  placeNameText: { fontSize: 22, fontWeight: "800", color: "#000000", marginBottom: 12, textAlign: "center" },
+  infoRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginBottom: 8, gap: 8 },
+  infoText: { fontSize: 14, color: "#4b5563", textAlign: "center" },
+  ratingStarsContainer: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginTop: 8, gap: 2 },
+  ratingCount: { fontSize: 12, color: "#64748b", marginLeft: 4 },
+  descriptionContainer: { padding: 20, backgroundColor: "#fff", borderBottomWidth: 1, borderBottomColor: "#e2e8f0" },
+  descriptionText: { fontSize: 14, color: "#475569", lineHeight: 20 },
+  readMoreButton: { marginTop: 8, alignSelf: "flex-start" },
+  readMoreText: { fontSize: 14, color: "#2c5a73", fontWeight: "600" },
+  reviewsSection: { padding: 20, backgroundColor: "#fff", marginTop: 8 },
+  personsSection: { padding: 20, backgroundColor: "#fff", marginTop: 8 },
+  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
+  sectionTitle: { fontSize: 18, fontWeight: "700", color: "#1e293b" },
+  sortButton: { padding: 4 },
+  sortButtonText: { fontSize: 13, color: "#2c5a73", fontWeight: "500" },
+  reviewCard: { backgroundColor: "#f8fafc", borderRadius: 12, padding: 16, marginBottom: 12 },
+  reviewHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
+  reviewerInfo: { flexDirection: "row", alignItems: "center" },
+  reviewerAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#2c5a73", justifyContent: "center", alignItems: "center", marginRight: 12 },
+  reviewerInitial: { fontSize: 16, fontWeight: "bold", color: "#fff" },
+  reviewerName: { fontSize: 14, fontWeight: "600", color: "#1e293b" },
+  reviewDateTime: { fontSize: 11, color: "#64748b", marginTop: 2 },
+  reviewTitle: { fontSize: 15, fontWeight: "600", color: "#1e293b", marginBottom: 4 },
+  reviewText: { fontSize: 13, color: "#475569", lineHeight: 18 },
+  personCard: { flexDirection: "row", backgroundColor: "#f8fafc", borderRadius: 12, padding: 12, marginBottom: 12, alignItems: "center" },
+  personRank: { width: 30, height: 30, borderRadius: 15, backgroundColor: "#2c5a73", justifyContent: "center", alignItems: "center", marginRight: 12 },
+  personRankText: { fontSize: 14, fontWeight: "bold", color: "#fff" },
+  personImageContainer: { width: 60, height: 60, borderRadius: 30, overflow: "hidden", marginRight: 12 },
+  personImage: { width: "100%", height: "100%" },
+  personImagePlaceholder: { width: "100%", height: "100%", justifyContent: "center", alignItems: "center" },
+  personInitial: { fontSize: 24, fontWeight: "bold", color: "#fff" },
+  personInfo: { flex: 1 },
+  personName: { fontSize: 15, fontWeight: "600", color: "#1e293b", marginBottom: 2 },
+  personLocation: { flexDirection: "row", alignItems: "center", marginBottom: 4 },
+  personLocationText: { fontSize: 12, color: "#64748b", marginLeft: 4 },
+  personBadge: { backgroundColor: "#e6f0f5", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12, alignSelf: "flex-start", marginTop: 4 },
+  personBadgeText: { fontSize: 10, color: "#2c5a73", fontWeight: "500" },
+  emptyContainer: { padding: 30, alignItems: "center" },
+  emptyText: { fontSize: 14, color: "#94a3b8", marginTop: 8 },
 });
