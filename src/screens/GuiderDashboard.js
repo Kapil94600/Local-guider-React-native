@@ -173,7 +173,7 @@ export default function GuiderDashboard({ navigation }) {
           placeId: response.data.data?.placeId?.toString() || "",
           places: response.data.data?.places || "",
         });
-        
+
         // Parse selected places
         if (response.data.data?.places) {
           const placeIds = response.data.data.places.split(',').map(id => parseInt(id));
@@ -547,7 +547,7 @@ export default function GuiderDashboard({ navigation }) {
   const handleUpdateProfile = async () => {
     try {
       const placeIds = selectedPlaces.map(p => p.id).join(',');
-      
+
       const response = await api.post(API.UPDATE_GUIDER, {
         guiderId: user?.id,
         firmName: editForm.firmName,
@@ -642,7 +642,7 @@ export default function GuiderDashboard({ navigation }) {
   };
 
   const getStatusColor = (status) => {
-    switch(status) {
+    switch (status) {
       case 'COMPLETED': return '#10B981';
       case 'ACCEPTED': return '#3B82F6';
       case 'REQUESTED': return '#F59E0B';
@@ -653,7 +653,7 @@ export default function GuiderDashboard({ navigation }) {
   };
 
   const getStatusBg = (status) => {
-    switch(status) {
+    switch (status) {
       case 'COMPLETED': return '#D1FAE5';
       case 'ACCEPTED': return '#DBEAFE';
       case 'REQUESTED': return '#FEF3C7';
@@ -687,7 +687,7 @@ export default function GuiderDashboard({ navigation }) {
       <SafeAreaView>
         <View style={styles.headerContent}>
           <View style={styles.headerLeft}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.menuIcon}
               onPress={() => setMenuVisible(true)}
             >
@@ -700,9 +700,9 @@ export default function GuiderDashboard({ navigation }) {
               </Text>
             </View>
           </View>
-          
+
           <View style={styles.headerRight}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.notificationBtn}
               onPress={() => navigation?.navigate("Notifications")}
             >
@@ -723,8 +723,8 @@ export default function GuiderDashboard({ navigation }) {
 
   const renderTabBar = () => (
     <View style={styles.tabBarContainer}>
-      <ScrollView 
-        horizontal 
+      <ScrollView
+        horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.tabBarScroll}
       >
@@ -743,10 +743,10 @@ export default function GuiderDashboard({ navigation }) {
             ]}
             onPress={() => setActiveTab(tab.id)}
           >
-            <Ionicons 
-              name={tab.icon} 
-              size={20} 
-              color={activeTab === tab.id ? '#2c5a73' : '#94a3b8'} 
+            <Ionicons
+              name={tab.icon}
+              size={20}
+              color={activeTab === tab.id ? '#2c5a73' : '#94a3b8'}
             />
             <Text style={[
               styles.tabLabel,
@@ -772,7 +772,7 @@ export default function GuiderDashboard({ navigation }) {
           <Ionicons name="wallet-outline" size={24} color="#fff" />
           <Text style={styles.walletTitle}>Available Balance</Text>
         </View>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.withdrawBtn}
           onPress={() => setWithdrawalModal(true)}
         >
@@ -800,10 +800,10 @@ export default function GuiderDashboard({ navigation }) {
       <View style={styles.statusContent}>
         <View style={styles.statusInfo}>
           <View style={styles.statusIconContainer}>
-            <Ionicons 
-              name={isActive ? 'flash' : 'flash-off'} 
-              size={24} 
-              color={isActive ? '#10B981' : '#94a3b8'} 
+            <Ionicons
+              name={isActive ? 'flash' : 'flash-off'}
+              size={24}
+              color={isActive ? '#10B981' : '#94a3b8'}
             />
           </View>
           <View style={styles.statusTextContainer}>
@@ -811,8 +811,8 @@ export default function GuiderDashboard({ navigation }) {
               {isActive ? 'Accepting Bookings' : 'Not Accepting Bookings'}
             </Text>
             <Text style={styles.statusSubtitle}>
-              {isActive 
-                ? 'Tourists can book your services' 
+              {isActive
+                ? 'Tourists can book your services'
                 : 'Toggle on to start receiving bookings'}
             </Text>
           </View>
@@ -830,31 +830,31 @@ export default function GuiderDashboard({ navigation }) {
 
   const renderStatsGrid = () => {
     const stats = [
-      { 
-        label: 'Total Tours', 
-        value: bookings.length, 
-        icon: 'calendar', 
+      {
+        label: 'Total Tours',
+        value: bookings.length,
+        icon: 'calendar',
         color: '#3B82F6',
         bgColor: '#DBEAFE'
       },
-      { 
-        label: 'Packages', 
-        value: services.length, 
-        icon: 'map', 
+      {
+        label: 'Packages',
+        value: services.length,
+        icon: 'map',
         color: '#8B5CF6',
         bgColor: '#EDE9FE'
       },
-      { 
-        label: 'Photos', 
-        value: gallery.length, 
-        icon: 'images', 
+      {
+        label: 'Photos',
+        value: gallery.length,
+        icon: 'images',
         color: '#10B981',
         bgColor: '#D1FAE5'
       },
-      { 
-        label: 'Rating', 
-        value: profile?.rating?.toFixed(1) || '0.0', 
-        icon: 'star', 
+      {
+        label: 'Rating',
+        value: profile?.rating?.toFixed(1) || '0.0',
+        icon: 'star',
         color: '#F59E0B',
         bgColor: '#FEF3C7'
       },
@@ -879,7 +879,7 @@ export default function GuiderDashboard({ navigation }) {
     <View style={styles.quickActionsCard}>
       <Text style={styles.cardTitle}>Quick Actions</Text>
       <View style={styles.quickActionsGrid}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.quickAction}
           onPress={() => {
             resetServiceForm();
@@ -895,7 +895,7 @@ export default function GuiderDashboard({ navigation }) {
           <Text style={styles.quickActionLabel}>Add Package</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.quickAction}
           onPress={() => setGalleryModal(true)}
         >
@@ -908,7 +908,7 @@ export default function GuiderDashboard({ navigation }) {
           <Text style={styles.quickActionLabel}>Upload Photos</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.quickAction}
           onPress={() => setWithdrawalModal(true)}
         >
@@ -921,7 +921,7 @@ export default function GuiderDashboard({ navigation }) {
           <Text style={styles.quickActionLabel}>Withdraw</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.quickAction}
           onPress={() => setEditProfileModal(true)}
         >
@@ -1020,8 +1020,8 @@ export default function GuiderDashboard({ navigation }) {
       {services.map((item) => (
         <View key={item.id} style={styles.serviceItem}>
           {item.image && (
-            <Image 
-              source={{ uri: getImageUrl(item.image) }} 
+            <Image
+              source={{ uri: getImageUrl(item.image) }}
               style={styles.serviceItemImage}
             />
           )}
@@ -1352,7 +1352,7 @@ export default function GuiderDashboard({ navigation }) {
                 placeholder="e.g., Heritage Walk, City Tour"
                 placeholderTextColor="#94a3b8"
                 value={serviceForm.title}
-                onChangeText={(text) => setServiceForm({...serviceForm, title: text})}
+                onChangeText={(text) => setServiceForm({ ...serviceForm, title: text })}
               />
             </View>
 
@@ -1363,7 +1363,7 @@ export default function GuiderDashboard({ navigation }) {
                 placeholder="e.g., 1500"
                 placeholderTextColor="#94a3b8"
                 value={serviceForm.servicePrice}
-                onChangeText={(text) => setServiceForm({...serviceForm, servicePrice: text})}
+                onChangeText={(text) => setServiceForm({ ...serviceForm, servicePrice: text })}
                 keyboardType="numeric"
               />
               <Text style={styles.hintText}>💡 Keep prices competitive to get more bookings</Text>
@@ -1376,7 +1376,7 @@ export default function GuiderDashboard({ navigation }) {
                 placeholder="Describe what's included in this tour..."
                 placeholderTextColor="#94a3b8"
                 value={serviceForm.description}
-                onChangeText={(text) => setServiceForm({...serviceForm, description: text})}
+                onChangeText={(text) => setServiceForm({ ...serviceForm, description: text })}
                 multiline
                 numberOfLines={4}
                 textAlignVertical="top"
@@ -1559,7 +1559,7 @@ export default function GuiderDashboard({ navigation }) {
                 placeholder="As per bank records"
                 placeholderTextColor="#94a3b8"
                 value={bankDetails.accountHolderName}
-                onChangeText={(text) => setBankDetails({...bankDetails, accountHolderName: text})}
+                onChangeText={(text) => setBankDetails({ ...bankDetails, accountHolderName: text })}
               />
             </View>
 
@@ -1570,7 +1570,7 @@ export default function GuiderDashboard({ navigation }) {
                 placeholder="e.g., State Bank of India"
                 placeholderTextColor="#94a3b8"
                 value={bankDetails.bankName}
-                onChangeText={(text) => setBankDetails({...bankDetails, bankName: text})}
+                onChangeText={(text) => setBankDetails({ ...bankDetails, bankName: text })}
               />
             </View>
 
@@ -1581,7 +1581,7 @@ export default function GuiderDashboard({ navigation }) {
                 placeholder="Enter account number"
                 placeholderTextColor="#94a3b8"
                 value={bankDetails.accountNumber}
-                onChangeText={(text) => setBankDetails({...bankDetails, accountNumber: text})}
+                onChangeText={(text) => setBankDetails({ ...bankDetails, accountNumber: text })}
                 keyboardType="numeric"
               />
             </View>
@@ -1594,7 +1594,7 @@ export default function GuiderDashboard({ navigation }) {
                   placeholder="IFSC"
                   placeholderTextColor="#94a3b8"
                   value={bankDetails.ifsc}
-                  onChangeText={(text) => setBankDetails({...bankDetails, ifsc: text})}
+                  onChangeText={(text) => setBankDetails({ ...bankDetails, ifsc: text })}
                 />
               </View>
               <View style={[styles.modalFormGroup, { flex: 1, marginLeft: 8 }]}>
@@ -1604,7 +1604,7 @@ export default function GuiderDashboard({ navigation }) {
                   placeholder="UPI ID (optional)"
                   placeholderTextColor="#94a3b8"
                   value={bankDetails.upiId}
-                  onChangeText={(text) => setBankDetails({...bankDetails, upiId: text})}
+                  onChangeText={(text) => setBankDetails({ ...bankDetails, upiId: text })}
                 />
               </View>
             </View>
@@ -1804,7 +1804,7 @@ export default function GuiderDashboard({ navigation }) {
             <Ionicons name="alert-circle" size={32} color="#EF4444" />
             <Text style={styles.warningTitle}>Are you sure?</Text>
             <Text style={styles.warningText}>
-              Rejecting bookings will affect your acceptance rate and ranking. 
+              Rejecting bookings will affect your acceptance rate and ranking.
               Only reject if absolutely necessary.
             </Text>
           </View>
@@ -1934,7 +1934,7 @@ export default function GuiderDashboard({ navigation }) {
                 placeholder="Enter your agency name"
                 placeholderTextColor="#94a3b8"
                 value={editForm.firmName}
-                onChangeText={(text) => setEditForm({...editForm, firmName: text})}
+                onChangeText={(text) => setEditForm({ ...editForm, firmName: text })}
               />
             </View>
 
@@ -1945,7 +1945,7 @@ export default function GuiderDashboard({ navigation }) {
                 placeholder="Enter email"
                 placeholderTextColor="#94a3b8"
                 value={editForm.email}
-                onChangeText={(text) => setEditForm({...editForm, email: text})}
+                onChangeText={(text) => setEditForm({ ...editForm, email: text })}
                 keyboardType="email-address"
               />
             </View>
@@ -1957,7 +1957,7 @@ export default function GuiderDashboard({ navigation }) {
                 placeholder="Enter phone number"
                 placeholderTextColor="#94a3b8"
                 value={editForm.phone}
-                onChangeText={(text) => setEditForm({...editForm, phone: text})}
+                onChangeText={(text) => setEditForm({ ...editForm, phone: text })}
                 keyboardType="phone-pad"
               />
             </View>
@@ -1969,7 +1969,7 @@ export default function GuiderDashboard({ navigation }) {
                 placeholder="Enter your address"
                 placeholderTextColor="#94a3b8"
                 value={editForm.address}
-                onChangeText={(text) => setEditForm({...editForm, address: text})}
+                onChangeText={(text) => setEditForm({ ...editForm, address: text })}
                 multiline
                 numberOfLines={3}
                 textAlignVertical="top"
@@ -2009,7 +2009,7 @@ export default function GuiderDashboard({ navigation }) {
                 placeholder="Tell tourists about your guiding experience and services"
                 placeholderTextColor="#94a3b8"
                 value={editForm.description}
-                onChangeText={(text) => setEditForm({...editForm, description: text})}
+                onChangeText={(text) => setEditForm({ ...editForm, description: text })}
                 multiline
                 numberOfLines={4}
                 textAlignVertical="top"
@@ -2054,13 +2054,13 @@ export default function GuiderDashboard({ navigation }) {
     <View style={styles.container}>
       {renderHeader()}
       {renderTabBar()}
-      
+
       <ScrollView
         style={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl 
-            refreshing={refreshing} 
+          <RefreshControl
+            refreshing={refreshing}
             onRefresh={onRefresh}
             tintColor="#2c5a73"
             colors={['#2c5a73']}
@@ -2076,12 +2076,12 @@ export default function GuiderDashboard({ navigation }) {
             {renderRecentBookings()}
           </View>
         )}
-        
+
         {activeTab === 'services' && renderServices()}
         {activeTab === 'gallery' && renderGallery()}
         {activeTab === 'bookings' && renderBookings()}
         {activeTab === 'earnings' && renderEarnings()}
-        
+
         <View style={styles.bottomSpace} />
       </ScrollView>
 
@@ -2098,7 +2098,7 @@ export default function GuiderDashboard({ navigation }) {
         onLogout={handleLogout}
         getImageUrl={getImageUrl}
       />
-      
+
       {renderServiceModal()}
       {renderGalleryModal()}
       {renderWithdrawalModal()}
@@ -2141,7 +2141,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: 10,
-    paddingTop:20
+    paddingTop: 20
   },
   headerLeft: {
     flex: 1,

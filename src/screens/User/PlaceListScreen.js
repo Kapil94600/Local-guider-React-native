@@ -815,9 +815,9 @@ export default function PlaceListScreen({ navigation, route }) {
         </View>
 
         {/* Results Count */}
-        <Text style={styles.resultsCount}>
+        {/* <Text style={styles.resultsCount}>
           {filteredPlaces.length} places found
-        </Text>
+        </Text> */}
       </LinearGradient>
 
       {/* Places List */}

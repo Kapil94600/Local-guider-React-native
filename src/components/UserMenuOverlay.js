@@ -16,24 +16,55 @@ import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import { AuthContext } from "../context/AuthContext";
 import { LocationContext } from "../context/LocationContext";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const { width, height } = Dimensions.get("window");
 const BASE_URL = "https://localguider.sinfode.com";
+const API_BASE = "https://localguider.sinfode.com/api";
 const STATUSBAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 0;
 
 export default function UserMenuOverlay({ visible, onClose, onNavigate }) {
     const { user, refreshUser, logout } = useContext(AuthContext);
     const { location, loading: locationLoading } = useContext(LocationContext);
-    const [balance, setBalance] = useState(user?.balance ?? 0);
+    const [balance, setBalance] = useState(0);
     const [roleModalVisible, setRoleModalVisible] = useState(false);
 
+    // Fetch fresh balance when menu becomes visible
     useEffect(() => {
-        refreshUser && refreshUser();
-    }, []);
+        if (visible && user?.id) {
+            fetchUserBalance();
+        }
+    }, [visible, user?.id]);
 
+    // Also update balance from user object if available (initial load)
     useEffect(() => {
-        setBalance(user?.balance ?? 0);
+        if (user?.balance !== undefined) {
+            setBalance(user.balance);
+        }
     }, [user?.balance]);
+
+    const fetchUserBalance = async () => {
+        try {
+            const token = await AsyncStorage.getItem("token");
+            if (!token || !user?.id) return;
+
+            const formData = new FormData();
+            formData.append("userId", user.id.toString());
+
+            const response = await fetch(`${API_BASE}/user/get_profile`, {
+                method: "POST",
+                headers: { Authorization: `Bearer ${token}` },
+                body: formData,
+            });
+
+            const json = await response.json();
+            if (json?.status && json?.data) {
+                setBalance(json.data.balance || 0);
+            }
+        } catch (error) {
+            console.error("Error fetching balance:", error);
+        }
+    };
 
     const userName =
         user?.username ||
@@ -83,36 +114,12 @@ export default function UserMenuOverlay({ visible, onClose, onNavigate }) {
                     {/* Profile Section */}
                     <View style={styles.profileSection}>
                         <View style={{
-                            width: 110, height: 100, backgroundColor: "#fff", borderRadius: 15, shadowOpacity: 0.1, shadowRadius: 10, elevation: 10,marginBottom:10 }}>
-                                <Image style={{ width: 80, height: 80, marginBottom: 0, marginLeft: 14, marginTop: 8 }} source={require('../../assets/images/logo.png')}></Image></View>
-                        {/* <TouchableOpacity
-                            style={styles.avatarContainer}
-                            onPress={() => {
-                                onClose();
-                                onNavigate("ProfileUpdate");
-                            }}
-                        >
-                            <LinearGradient
-                                colors={['#ffffff30', '#ffffff10']}
-                                style={styles.avatarGradient}
-                            >
-                                {profileImage ? (
-                                    <Image source={{ uri: profileImage }} style={styles.avatarImg} />
-                                ) : (
-                                    <View style={styles.avatarPlaceholder}>
-                                        <Text style={styles.avatarText}>
-                                            {userName.charAt(0).toUpperCase()}
-                                        </Text>
-                                    </View>
-                                )}
-                            </LinearGradient>
-                            <View style={styles.editBadge}>
-                                <Ionicons name="pencil" size={12} color="#fff" />
-                            </View>
-                        </TouchableOpacity> */}
+                            width: 110, height: 100, backgroundColor: "#fff", borderRadius: 15, shadowOpacity: 0.1, shadowRadius: 10, elevation: 10, marginBottom: 10
+                        }}>
+                            <Image style={{ width: 80, height: 80, marginBottom: 0, marginLeft: 14, marginTop: 8 }} source={require('../../assets/images/logo.png')} />
+                        </View>
 
                         <View style={styles.userInfoContainer}>
-
                             <Text style={styles.userName}>{userName}</Text>
                             {user?.email && (
                                 <Text style={styles.userEmail}>{user.email}</Text>
@@ -166,7 +173,7 @@ export default function UserMenuOverlay({ visible, onClose, onNavigate }) {
                         <MenuItem
                             imageSource={require('../../assets/icone/ic_credit_card.webp')}
                             label="Wallet Balance"
-                            value={`₹${balance.toLocaleString()}`}
+                            // ✅ value prop हटा दिया – अब balance केवल ऊपर pill में दिखेगा
                             onPress={() => {
                                 onClose();
                                 onNavigate("AddBalance");
@@ -387,7 +394,7 @@ export default function UserMenuOverlay({ visible, onClose, onNavigate }) {
     );
 }
 
-// 🟢 FIXED MenuItem component - REMOVED TINTCOLOR
+// 🟢 MenuItem component - no tintColor on images
 function MenuItem({ imageSource, label, onPress, color = "#1e293b", badge, value }) {
     return (
         <TouchableOpacity style={styles.menuItem} onPress={onPress}>
@@ -395,7 +402,7 @@ function MenuItem({ imageSource, label, onPress, color = "#1e293b", badge, value
                 {imageSource ? (
                     <Image
                         source={imageSource}
-                        style={styles.menuItemImage} // 👈 REMOVED tintColor
+                        style={styles.menuItemImage}
                     />
                 ) : (
                     <Ionicons name="help-outline" size={20} color={color} />
@@ -597,7 +604,6 @@ const styles = StyleSheet.create({
         height: 22,
         resizeMode: "contain",
         marginRight: 8,
-        // 👈 NO tintColor here
     },
     menuItemText: {
         marginLeft: 4,
@@ -708,7 +714,6 @@ const styles = StyleSheet.create({
         width: 30,
         height: 30,
         resizeMode: "contain",
-        // 👈 NO tintColor here - original color will show
     },
     modalOptionContent: {
         flex: 1,

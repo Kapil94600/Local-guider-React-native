@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from "react";
+import React, { useState, useEffect, useContext, useRef } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,9 @@ import {
   ActivityIndicator,
   Alert,
   RefreshControl,
+  FlatList,
+  Modal,
+  Animated,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -31,7 +34,7 @@ const getImageUrl = (path) => {
 };
 
 // Rating Stars Component
-const RatingStars = ({ rating, size = 14, showCount = false, count = 0 }) => {
+const RatingStars = ({ rating, size = 14 }) => {
   const stars = [];
   const fullStars = Math.floor(rating || 0);
   const hasHalf = (rating || 0) % 1 >= 0.5;
@@ -45,27 +48,16 @@ const RatingStars = ({ rating, size = 14, showCount = false, count = 0 }) => {
       stars.push(<Ionicons key={i} name="star-outline" size={size} color="#FFD700" />);
     }
   }
-  return (
-    <View style={styles.ratingStarsContainer}>
-      {stars}
-      {showCount && <Text style={styles.ratingCount}>({count} reviews)</Text>}
-    </View>
-  );
+  return <View style={styles.ratingStarsContainer}>{stars}</View>;
 };
 
-// Review Card Component
+// Horizontal Review Card
 const ReviewCard = ({ review }) => {
-  const formatDateTime = (dateString) => {
+  const formatDate = (dateString) => {
     if (!dateString) return "";
     try {
       const date = new Date(dateString);
-      return date.toLocaleDateString('en-IN', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
+      return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
     } catch {
       return "";
     }
@@ -73,36 +65,49 @@ const ReviewCard = ({ review }) => {
 
   const userName = review?.fullName || review?.user?.name || review?.userName || "Anonymous";
   const userInitial = userName ? userName.charAt(0).toUpperCase() : "U";
-  const reviewTitle = review?.title || (review?.rating >= 4 ? "Great experience!" : "Good place");
-  const reviewText = review?.message || review?.comment || review?.review || "No review text provided.";
+  const profileImage = review?.profileImage ? getImageUrl(review.profileImage) : null;
+  const reviewText = review?.message || review?.comment || review?.review || "";
 
   return (
     <View style={styles.reviewCard}>
       <View style={styles.reviewHeader}>
-        <View style={styles.reviewerInfo}>
-          <View style={styles.reviewerAvatar}>
+        {profileImage ? (
+          <Image source={{ uri: profileImage }} style={styles.reviewerImage} />
+        ) : (
+          <LinearGradient colors={["#2c5a73", "#1e3c4f"]} style={styles.reviewerPlaceholder}>
             <Text style={styles.reviewerInitial}>{userInitial}</Text>
-          </View>
-          <View>
-            <Text style={styles.reviewerName}>{userName}</Text>
-            {review?.createdOn && (
-              <Text style={styles.reviewDateTime}>{formatDateTime(review.createdOn)}</Text>
-            )}
-          </View>
+          </LinearGradient>
+        )}
+        <View style={styles.reviewerInfo}>
+          <Text style={styles.reviewerName} numberOfLines={1}>{userName}</Text>
+          <RatingStars rating={review?.rating} size={10} />
         </View>
-        <RatingStars rating={review?.rating} size={12} />
       </View>
-      <Text style={styles.reviewTitle}>{reviewTitle}</Text>
-      <Text style={styles.reviewText} numberOfLines={3}>
-        {reviewText}
-      </Text>
+      <Text style={styles.reviewText} numberOfLines={3}>{reviewText}</Text>
+      <Text style={styles.reviewDate}>{formatDate(review?.createdOn)}</Text>
     </View>
   );
 };
 
-// Person Card Component (for Guider and Photographer)
-const PersonCard = ({ item, type, rank, onPress }) => {
-  const imageUrl = item?.featuredImage || item?.profileImage || item?.avatar;
+// Animated Professional Card
+const AnimatedProfessionalCard = ({ item, type, rank, onPress }) => {
+  const scaleValue = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.spring(scaleValue, {
+      toValue: 0.97,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scaleValue, {
+      toValue: 1,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const imageUrl = item?.photograph || item?.featuredImage || item?.profileImage;
   const name = item?.firmName || item?.name || (type === "guider" ? "Tour Guide" : "Photographer");
   const location = item?.city || item?.state || "Location";
   const badge = item?.specialization || (type === "guider" ? "Tour Guide" : "Photographer");
@@ -110,30 +115,37 @@ const PersonCard = ({ item, type, rank, onPress }) => {
     type === "guider" ? ["#3B82F6", "#1E40AF"] : ["#8B5CF6", "#6D28D9"];
 
   return (
-    <TouchableOpacity style={styles.personCard} onPress={onPress} activeOpacity={0.7}>
-      <View style={styles.personRank}>
-        <Text style={styles.personRankText}>{rank}</Text>
-      </View>
-      <View style={styles.personImageContainer}>
-        {imageUrl ? (
-          <Image source={{ uri: getImageUrl(imageUrl) }} style={styles.personImage} />
-        ) : (
-          <LinearGradient colors={gradientColors} style={styles.personImagePlaceholder}>
-            <Text style={styles.personInitial}>{name.charAt(0).toUpperCase()}</Text>
-          </LinearGradient>
-        )}
-      </View>
-      <View style={styles.personInfo}>
-        <Text style={styles.personName}>{name}</Text>
-        <View style={styles.personLocation}>
-          <Ionicons name="location-outline" size={12} color="#64748b" />
-          <Text style={styles.personLocationText}>{location}</Text>
+    <TouchableOpacity
+      activeOpacity={1}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      onPress={onPress}
+    >
+      <Animated.View style={[styles.personCard, { transform: [{ scale: scaleValue }] }]}>
+        <View style={styles.personRank}>
+          <Text style={styles.personRankText}>{rank}</Text>
         </View>
-        <RatingStars rating={item?.rating} size={12} />
-        <View style={styles.personBadge}>
-          <Text style={styles.personBadgeText}>{badge}</Text>
+        <View style={styles.personImageContainer}>
+          {imageUrl ? (
+            <Image source={{ uri: getImageUrl(imageUrl) }} style={styles.personImage} />
+          ) : (
+            <LinearGradient colors={gradientColors} style={styles.personImagePlaceholder}>
+              <Text style={styles.personInitial}>{name.charAt(0).toUpperCase()}</Text>
+            </LinearGradient>
+          )}
         </View>
-      </View>
+        <View style={styles.personInfo}>
+          <Text style={styles.personName} numberOfLines={1}>{name}</Text>
+          <View style={styles.personLocation}>
+            <Ionicons name="location-outline" size={12} color="#64748b" />
+            <Text style={styles.personLocationText} numberOfLines={1}>{location}</Text>
+          </View>
+          <RatingStars rating={item?.rating} size={12} />
+          <View style={styles.personBadge}>
+            <Text style={styles.personBadgeText}>{badge}</Text>
+          </View>
+        </View>
+      </Animated.View>
     </TouchableOpacity>
   );
 };
@@ -153,7 +165,7 @@ export default function PlaceDetailsScreen({ route, navigation }) {
   const [loadingPhotographers, setLoadingPhotographers] = useState(false);
   const [sortBy, setSortBy] = useState("recent");
   const [descExpanded, setDescExpanded] = useState(false);
-  const [reviewsError, setReviewsError] = useState(false);
+  const [imageModalVisible, setImageModalVisible] = useState(false);
 
   useEffect(() => {
     if (!placeId) {
@@ -199,25 +211,28 @@ export default function PlaceDetailsScreen({ route, navigation }) {
 
   const fetchReviews = async () => {
     try {
-      setReviewsError(false);
-      const response = await api.post(API.GET_REVIEWS_BY_ID, {
-        placeId: Number(placeId),
+      const formData = new URLSearchParams();
+      formData.append('placeId', placeId.toString());
+
+      const response = await api.post(API.GET_ALL_REVIEW, formData.toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
+
       if (response?.data?.status === true) {
         let reviewsData = response.data.data || [];
-        // Sort based on selected sort option
+
         if (sortBy === "recent") {
           reviewsData.sort((a, b) => new Date(b.createdOn) - new Date(a.createdOn));
         } else {
           reviewsData.sort((a, b) => (b.rating || 0) - (a.rating || 0));
         }
+
         setReviews(reviewsData);
       } else {
         setReviews([]);
       }
     } catch (error) {
-      console.error("Error fetching reviews:", error);
-      setReviewsError(true);
+      console.log("Reviews API Error:", error.response?.data || error.message);
       setReviews([]);
     }
   };
@@ -225,16 +240,20 @@ export default function PlaceDetailsScreen({ route, navigation }) {
   const fetchGuiders = async () => {
     try {
       setLoadingGuiders(true);
-      const response = await api.post(API.GET_GUIDERS_BY_PLACE_ID, {
-        placeId: placeId,
+      const formData = new URLSearchParams();
+      formData.append('placeId', placeId.toString());
+
+      const response = await api.post(API.GET_GUIDERS_BY_PLACE_ID, formData.toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
+
       if (response?.data?.status === true) {
         setGuiders(response.data.data || []);
       } else {
         setGuiders([]);
       }
     } catch (error) {
-      console.error("Error fetching guiders:", error);
+      console.log("Guiders API Error:", error.response?.data || error.message);
       setGuiders([]);
     } finally {
       setLoadingGuiders(false);
@@ -244,39 +263,24 @@ export default function PlaceDetailsScreen({ route, navigation }) {
   const fetchPhotographers = async () => {
     try {
       setLoadingPhotographers(true);
-      const response = await api.post(API.GET_PHOTOGRAPHERS_BY_PLACE_ID, {
-        placeId: placeId,
+      const formData = new URLSearchParams();
+      formData.append('placeId', placeId.toString());
+
+      const response = await api.post(API.GET_PHOTOGRAPHERS_BY_PLACE_ID, formData.toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
+
       if (response?.data?.status === true) {
         setPhotographers(response.data.data || []);
       } else {
         setPhotographers([]);
       }
     } catch (error) {
-      console.error("Error fetching photographers:", error);
+      console.log("Photographers API Error:", error.response?.data || error.message);
       setPhotographers([]);
     } finally {
       setLoadingPhotographers(false);
     }
-  };
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await fetchAllData();
-    setRefreshing(false);
-  };
-
-  const toggleSort = () => {
-    const newSort = sortBy === "recent" ? "rating" : "recent";
-    setSortBy(newSort);
-    // Re-sort existing reviews
-    const sorted = [...reviews];
-    if (newSort === "recent") {
-      sorted.sort((a, b) => new Date(b.createdOn) - new Date(a.createdOn));
-    } else {
-      sorted.sort((a, b) => (b.rating || 0) - (a.rating || 0));
-    }
-    setReviews(sorted);
   };
 
   const toggleDescription = () => {
@@ -290,6 +294,12 @@ export default function PlaceDetailsScreen({ route, navigation }) {
       return place.description.substring(0, 150) + "...";
     }
     return place.description;
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchAllData();
+    setRefreshing(false);
   };
 
   if (loading) {
@@ -331,9 +341,13 @@ export default function PlaceDetailsScreen({ route, navigation }) {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#2c5a73"]} />}
       >
-        {/* Row with Image and Text */}
+        {/* Place Card with Image and Text */}
         <View style={styles.rowContainer}>
-          <View style={styles.coverContainer}>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => setImageModalVisible(true)}
+            style={styles.coverContainer}
+          >
             {place.featuredImage ? (
               <Image
                 source={{ uri: getImageUrl(place.featuredImage) }}
@@ -345,7 +359,7 @@ export default function PlaceDetailsScreen({ route, navigation }) {
                 <Ionicons name="image-outline" size={30} color="#fff" />
               </LinearGradient>
             )}
-          </View>
+          </TouchableOpacity>
 
           <View style={styles.textContentContainer}>
             <Text style={styles.placeNameText}>{place.placeName}</Text>
@@ -363,6 +377,7 @@ export default function PlaceDetailsScreen({ route, navigation }) {
           </View>
         </View>
 
+        {/* Description */}
         <View style={styles.descriptionContainer}>
           <Text style={styles.descriptionText}>{getDisplayDescription()}</Text>
           {needsReadMore && (
@@ -372,25 +387,26 @@ export default function PlaceDetailsScreen({ route, navigation }) {
           )}
         </View>
 
+        {/* Reviews Section - Horizontal Scroll */}
         <View style={styles.reviewsSection}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Reviews & Rating</Text>
-            <TouchableOpacity onPress={toggleSort} style={styles.sortButton}>
+            <TouchableOpacity onPress={() => setSortBy(sortBy === "recent" ? "top" : "recent")} style={styles.sortButton}>
               <Text style={styles.sortButtonText}>
                 Sorted by {sortBy === "recent" ? "recent reviews" : "top rating"} ▼
               </Text>
             </TouchableOpacity>
           </View>
 
-          {reviewsError ? (
-            <View style={styles.errorContainer}>
-              <Ionicons name="alert-circle-outline" size={40} color="#ef4444" />
-              <Text style={styles.errorText}>Failed to load reviews</Text>
-            </View>
-          ) : reviews.length > 0 ? (
-            reviews.slice(0, 4).map((review, index) => (
-              <ReviewCard key={review.id || index} review={review} />
-            ))
+          {reviews.length > 0 ? (
+            <FlatList
+              data={reviews}
+              renderItem={({ item }) => <ReviewCard review={item} />}
+              keyExtractor={(item, index) => item.id?.toString() || index.toString()}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.reviewsHorizontalList}
+            />
           ) : (
             <View style={styles.emptyContainer}>
               <Ionicons name="chatbubble-outline" size={40} color="#94a3b8" />
@@ -399,6 +415,7 @@ export default function PlaceDetailsScreen({ route, navigation }) {
           )}
         </View>
 
+        {/* Top Guiders Section */}
         <View style={styles.personsSection}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Top Guider</Text>
@@ -414,7 +431,7 @@ export default function PlaceDetailsScreen({ route, navigation }) {
             </View>
           ) : guiders.length > 0 ? (
             guiders.map((guider, index) => (
-              <PersonCard
+              <AnimatedProfessionalCard
                 key={guider.id}
                 item={guider}
                 type="guider"
@@ -435,6 +452,7 @@ export default function PlaceDetailsScreen({ route, navigation }) {
           )}
         </View>
 
+        {/* Top Photographers Section */}
         <View style={styles.personsSection}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Top Photographer</Text>
@@ -450,7 +468,7 @@ export default function PlaceDetailsScreen({ route, navigation }) {
             </View>
           ) : photographers.length > 0 ? (
             photographers.map((photographer, index) => (
-              <PersonCard
+              <AnimatedProfessionalCard
                 key={photographer.id}
                 item={photographer}
                 type="photographer"
@@ -473,6 +491,20 @@ export default function PlaceDetailsScreen({ route, navigation }) {
 
         <View style={{ height: 30 }} />
       </ScrollView>
+
+      {/* Full Screen Image Modal */}
+      <Modal visible={imageModalVisible} transparent={true} animationType="fade">
+        <View style={styles.modalContainer}>
+          <TouchableOpacity style={styles.modalClose} onPress={() => setImageModalVisible(false)}>
+            <Ionicons name="close" size={30} color="#fff" />
+          </TouchableOpacity>
+          <Image
+            source={{ uri: getImageUrl(place.featuredImage) }}
+            style={styles.modalImage}
+            resizeMode="contain"
+          />
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -490,36 +522,59 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: 46, paddingHorizontal: 16, paddingBottom: 16 },
   backButton: { width: 40, height: 40, justifyContent: "center", alignItems: "center" },
   headerTitle: { flex: 1, fontSize: 18, fontWeight: "600", color: "#fff", textAlign: "center" },
-  rowContainer: { flexDirection: "row", alignItems: "center", padding: 16, gap: 16 },
-  coverContainer: { width: 160, height: 180, borderRadius: 14, overflow: "hidden", borderWidth: 6, borderColor: "#2c5a73" },
+  
+  // Place Card
+  rowContainer: { flexDirection: "row", padding: 16, gap: 16 },
+  coverContainer: { width: 140, height: 160, borderRadius: 12, overflow: "hidden", borderWidth: 2, borderColor: "#e2e8f0", backgroundColor: "#fff" },
   coverImage: { width: "100%", height: "100%" },
   coverPlaceholder: { width: "100%", height: "100%", justifyContent: "center", alignItems: "center" },
   textContentContainer: { flex: 1, justifyContent: "center" },
-  placeNameText: { fontSize: 22, fontWeight: "800", color: "#000000", marginBottom: 12, textAlign: "center" },
-  infoRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginBottom: 8, gap: 8 },
-  infoText: { fontSize: 14, color: "#4b5563", textAlign: "center" },
-  ratingStarsContainer: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginTop: 8, gap: 2 },
-  ratingCount: { fontSize: 12, color: "#64748b", marginLeft: 4 },
-  descriptionContainer: { padding: 20, backgroundColor: "#fff", borderBottomWidth: 1, borderBottomColor: "#e2e8f0" },
+  placeNameText: { fontSize: 20, fontWeight: "700", color: "#1e293b", marginBottom: 8 },
+  infoRow: { flexDirection: "row", alignItems: "center", marginBottom: 6, gap: 8 },
+  infoText: { fontSize: 14, color: "#4b5563" },
+  ratingStarsContainer: { flexDirection: "row", marginTop: 4, gap: 2 },
+  
+  // Description
+  descriptionContainer: { paddingHorizontal: 16, paddingBottom: 16, backgroundColor: "#fff", marginTop: 8, paddingTop: 16 },
   descriptionText: { fontSize: 14, color: "#475569", lineHeight: 20 },
-  readMoreButton: { marginTop: 8, alignSelf: "flex-start" },
+  readMoreButton: { marginTop: 8 },
   readMoreText: { fontSize: 14, color: "#2c5a73", fontWeight: "600" },
-  reviewsSection: { padding: 20, backgroundColor: "#fff", marginTop: 8 },
-  personsSection: { padding: 20, backgroundColor: "#fff", marginTop: 8 },
+  
+  // Sections
+  reviewsSection: { backgroundColor: "#fff", marginTop: 8, padding: 16 },
+  personsSection: { backgroundColor: "#fff", marginTop: 8, padding: 16 },
   sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
   sectionTitle: { fontSize: 18, fontWeight: "700", color: "#1e293b" },
   sortButton: { padding: 4 },
   sortButtonText: { fontSize: 13, color: "#2c5a73", fontWeight: "500" },
-  reviewCard: { backgroundColor: "#f8fafc", borderRadius: 12, padding: 16, marginBottom: 12 },
-  reviewHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
-  reviewerInfo: { flexDirection: "row", alignItems: "center" },
-  reviewerAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#2c5a73", justifyContent: "center", alignItems: "center", marginRight: 12 },
+  
+  // Horizontal Review Card
+  reviewsHorizontalList: { paddingRight: 16, gap: 12 },
+  reviewCard: {
+    width: 260,
+    backgroundColor: "#f8fafc",
+    borderRadius: 12,
+    padding: 12,
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+  },
+  reviewHeader: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
+  reviewerImage: { width: 36, height: 36, borderRadius: 18, marginRight: 8 },
+  reviewerPlaceholder: { width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center", marginRight: 8 },
   reviewerInitial: { fontSize: 16, fontWeight: "bold", color: "#fff" },
-  reviewerName: { fontSize: 14, fontWeight: "600", color: "#1e293b" },
-  reviewDateTime: { fontSize: 11, color: "#64748b", marginTop: 2 },
-  reviewTitle: { fontSize: 15, fontWeight: "600", color: "#1e293b", marginBottom: 4 },
-  reviewText: { fontSize: 13, color: "#475569", lineHeight: 18 },
-  personCard: { flexDirection: "row", backgroundColor: "#f8fafc", borderRadius: 12, padding: 12, marginBottom: 12, alignItems: "center" },
+  reviewerInfo: { flex: 1 },
+  reviewerName: { fontSize: 13, fontWeight: "600", color: "#1e293b" },
+  reviewText: { fontSize: 12, color: "#475569", lineHeight: 16, marginBottom: 4 },
+  reviewDate: { fontSize: 10, color: "#94a3b8", alignSelf: "flex-end" },
+  
+  // Professional Card
+  personCard: { flexDirection: "row", backgroundColor: "#f8fafc", borderRadius: 12, padding: 12, marginBottom: 12, alignItems: "center", borderWidth: 1, borderColor: "#e2e8f0" },
   personRank: { width: 30, height: 30, borderRadius: 15, backgroundColor: "#2c5a73", justifyContent: "center", alignItems: "center", marginRight: 12 },
   personRankText: { fontSize: 14, fontWeight: "bold", color: "#fff" },
   personImageContainer: { width: 60, height: 60, borderRadius: 30, overflow: "hidden", marginRight: 12 },
@@ -532,6 +587,12 @@ const styles = StyleSheet.create({
   personLocationText: { fontSize: 12, color: "#64748b", marginLeft: 4 },
   personBadge: { backgroundColor: "#e6f0f5", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12, alignSelf: "flex-start", marginTop: 4 },
   personBadgeText: { fontSize: 10, color: "#2c5a73", fontWeight: "500" },
+  
   emptyContainer: { padding: 30, alignItems: "center" },
   emptyText: { fontSize: 14, color: "#94a3b8", marginTop: 8 },
+  
+  // Modal
+  modalContainer: { flex: 1, backgroundColor: "rgba(0,0,0,0.9)", justifyContent: "center", alignItems: "center" },
+  modalClose: { position: "absolute", top: 50, right: 20, zIndex: 10 },
+  modalImage: { width: "100%", height: "80%" },
 });
