@@ -23,16 +23,16 @@ import TopPlacesScreen from "../screens/User/TopPlacesScreen.js";
 import TopGuidersScreen from "../screens/User/TopGuidersScreen.js";
 import NotificationsScreen from "../screens/notifications/NotificationsScreen";
 import PlaceDetailsScreen from "../screens/User/PlaceDetailsScreen.js";
-
+import ProfessionalDetailsScreen from '../screens/User/ProfessionalDetailsScreen';
 import TransactionHistory from "../screens/User/TransactionHistory";
 import MyBookings from "../screens/User/MyBookings";
 import AboutUs from "../screens/User/AboutUs";
 import TermsConditions from "../screens/User/TermsConditions";
 import HelpSupport from "../screens/User/HelpSupport";
-import FindTourGuides from "../screens/User/FindTourGuides";
-import FindPhotographers from "../screens/User/FindPhotographers";
-import ExplorePlaces from "../screens/User/ExplorePlaces";
 
+import ExplorePlaces from "../screens/User/ExplorePlaces";
+import LikedScreen from "../screens/User/LikedScreen";
+import ReviewScreen from '../screens/User/ReviewScreen';
 // For admin
 
 /* 📍 LOCATION */
@@ -88,7 +88,8 @@ export default function AppNavigator() {
           // 👤 Normal User (can send role request)
           <>
             <Stack.Screen name="UserDashboard" component={UserDashboard} />
-
+            <Stack.Screen name="ProfessionalDetails" component={ProfessionalDetailsScreen} options={{ headerShown: false }} />
+<Stack.Screen name="ReviewScreen" component={ReviewScreen} options={{ headerShown: false }} />
             {/* 👤 PROFILE */}
             <Stack.Screen name="UserMenu" component={UserMenuScreen} />
             <Stack.Screen name="UserProfile" component={UserProfileScreen} />
@@ -112,7 +113,8 @@ export default function AppNavigator() {
               name="PhotographersListScreen"
               component={PhotographersListScreen}
             />
-
+           <Stack.Screen name="Liked" component={LikedScreen} options={{ headerShown: false }} />
+<Stack.Screen name="LikedScreen" component={LikedScreen} options={{ headerShown: false }} />
             {/* ✅ FIXED: Changed from "PlaceDetailsScreen" to "PlaceDetails" */}
             <Stack.Screen
               name="PlaceDetails"
@@ -186,16 +188,7 @@ export default function AppNavigator() {
               component={HelpSupport} 
               options={{ headerShown: false }}
             />
-            <Stack.Screen 
-              name="FindTourGuides" 
-              component={FindTourGuides} 
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen 
-              name="FindPhotographers" 
-              component={FindPhotographers} 
-              options={{ headerShown: false }}
-            />
+           
             <Stack.Screen 
               name="ExplorePlaces" 
               component={ExplorePlaces} 

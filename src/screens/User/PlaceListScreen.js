@@ -21,6 +21,11 @@ import api from "../../api/apiClient";
 import { API } from "../../api/endpoints";
 import { BlurView } from "expo-blur";
 
+// ✅ Import like hook and component
+import { useLikes } from '../../context/LikesContext';
+import LikeButton from "../../components/LikeButton";
+
+
 const { width } = Dimensions.get("window");
 const BASE_URL = "https://localguider.sinfode.com";
 
@@ -28,21 +33,15 @@ export default function PlaceListScreen({ navigation, route }) {
   const { location } = useContext(LocationContext);
   const { type } = route.params || { type: "all" };
 
+  // ✅ Like hook at top level
+  const { isLiked, toggleLike } = useLikes();
+
   const [places, setPlaces] = useState([]);
   const [filteredPlaces, setFilteredPlaces] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterModal, setFilterModal] = useState(false);
-  const [selectedPlace, setSelectedPlace] = useState(null);
-  const [detailsModal, setDetailsModal] = useState(false);
-  
-  // New states for guides and photographers
-  const [placeGuides, setPlaceGuides] = useState([]);
-  const [placePhotographers, setPlacePhotographers] = useState([]);
-  const [loadingGuides, setLoadingGuides] = useState(false);
-  const [loadingPhotographers, setLoadingPhotographers] = useState(false);
-  const [activeTab, setActiveTab] = useState("guides"); // 'guides' or 'photographers'
   
   // Filter states
   const [sortBy, setSortBy] = useState("rating");
@@ -125,58 +124,6 @@ export default function PlaceListScreen({ navigation, route }) {
     }
   };
 
-  // Fetch guides for selected place
-  const fetchPlaceGuides = async (placeId) => {
-    if (!placeId) return;
-    
-    setLoadingGuides(true);
-    try {
-      const response = await api.post(API.GET_GUIDERS_BY_PLACE_ID, {
-        placeId: placeId,
-        page: 1,
-        perPage: 10,
-        sortBy: "rating" // Sort by rating by default
-      });
-
-      if (response.data?.status) {
-        setPlaceGuides(response.data.data || []);
-      } else {
-        setPlaceGuides([]);
-      }
-    } catch (error) {
-      console.error("Error fetching guides:", error);
-      setPlaceGuides([]);
-    } finally {
-      setLoadingGuides(false);
-    }
-  };
-
-  // Fetch photographers for selected place
-  const fetchPlacePhotographers = async (placeId) => {
-    if (!placeId) return;
-    
-    setLoadingPhotographers(true);
-    try {
-      const response = await api.post(API.GET_PHOTOGRAPHERS_BY_PLACE_ID, {
-        placeId: placeId,
-        page: 1,
-        perPage: 10,
-        sortBy: "rating" // Sort by rating by default
-      });
-
-      if (response.data?.status) {
-        setPlacePhotographers(response.data.data || []);
-      } else {
-        setPlacePhotographers([]);
-      }
-    } catch (error) {
-      console.error("Error fetching photographers:", error);
-      setPlacePhotographers([]);
-    } finally {
-      setLoadingPhotographers(false);
-    }
-  };
-
   const loadMore = () => {
     if (hasMore && !loadingMore) {
       fetchPlaces(page + 1, true);
@@ -189,28 +136,9 @@ export default function PlaceListScreen({ navigation, route }) {
     fetchPlaces(1, false);
   };
 
+  // ✅ Handle place press – navigate to PlaceDetailsScreen
   const handlePlacePress = (place) => {
-    setSelectedPlace(place);
-    setActiveTab("guides"); // Reset to guides tab
-    setPlaceGuides([]);
-    setPlacePhotographers([]);
-    setDetailsModal(true);
-    
-    // Fetch guides and photographers for this place
-    fetchPlaceGuides(place.id);
-    fetchPlacePhotographers(place.id);
-  };
-
-  const handleBookAppointment = (professional, type) => {
-    setDetailsModal(false);
-    navigation.navigate("BookAppointment", {
-      professionalId: professional.id,
-      professionalType: type, // 'guider' or 'photographer'
-      professionalName: type === 'guider' ? professional.firmName : professional.firmName,
-      placeId: selectedPlace.id,
-      placeName: selectedPlace.placeName,
-      serviceCost: professional.serviceCost || 0,
-    });
+    navigation.navigate("PlaceDetails", { placeId: place.id });
   };
 
   const getImageUrl = (path) => {
@@ -257,154 +185,85 @@ export default function PlaceListScreen({ navigation, route }) {
     fetchPlaces(1, false);
   };
 
+  // ✅ Render each place card with LikeButton
   const renderPlaceCard = ({ item }) => (
-    <TouchableOpacity
-      style={styles.placeCard}
-      onPress={() => handlePlacePress(item)}
-      activeOpacity={0.7}
-    >
-      {item.featuredImage ? (
-        <Image
-          source={{ uri: getImageUrl(item.featuredImage) }}
-          style={styles.placeImage}
-        />
-      ) : (
-        <LinearGradient
-          colors={['#2c5a73', '#1e3c4f']}
-          style={styles.placeImagePlaceholder}
-        >
-          <Ionicons name="image-outline" size={32} color="#fff" />
-        </LinearGradient>
-      )}
+    <View style={styles.placeCard}>
+      {/* Like Button – positioned absolutely */}
+      <LikeButton
+        isLiked={isLiked(item.id, 'place')}
+        onPress={() => toggleLike(item, 'place')}
+        size={18}
+        style={styles.cardLikeButton}
+      />
 
-      <View style={styles.placeContent}>
-        <View style={styles.placeHeader}>
-          <Text style={styles.placeName} numberOfLines={1}>
-            {item.placeName}
-          </Text>
-          {item.topPlace && (
-            <View style={styles.topBadge}>
-              <Ionicons name="star" size={12} color="#fff" />
-              <Text style={styles.topBadgeText}>Top</Text>
-            </View>
-          )}
-        </View>
-
-        <View style={styles.ratingContainer}>
-          {renderRating(item.rating)}
-          <Text style={styles.ratingText}>({item.rating?.toFixed(1) || "0.0"})</Text>
-        </View>
-
-        <View style={styles.locationRow}>
-          <Ionicons name="location-outline" size={14} color="#64748b" />
-          <Text style={styles.locationText} numberOfLines={1}>
-            {item.city}, {item.state}
-          </Text>
-        </View>
-
-        <Text style={styles.description} numberOfLines={2}>
-          {item.description || "No description available"}
-        </Text>
-
-        <View style={styles.cardFooter}>
-          <View style={styles.statsContainer}>
-            <View style={styles.statItem}>
-              <Ionicons name="eye-outline" size={14} color="#64748b" />
-              <Text style={styles.statText}>{item.views || 0} views</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Ionicons name="people-outline" size={14} color="#64748b" />
-              <Text style={styles.statText}>{item.guiders || 0} guides</Text>
-            </View>
-          </View>
-          
+      <TouchableOpacity
+        onPress={() => handlePlacePress(item)}
+        activeOpacity={0.7}
+      >
+        {item.featuredImage ? (
+          <Image
+            source={{ uri: getImageUrl(item.featuredImage) }}
+            style={styles.placeImage}
+          />
+        ) : (
           <LinearGradient
             colors={['#2c5a73', '#1e3c4f']}
-            style={styles.exploreBadge}
+            style={styles.placeImagePlaceholder}
           >
-            <Text style={styles.exploreBadgeText}>View Details</Text>
+            <Ionicons name="image-outline" size={32} color="#fff" />
           </LinearGradient>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
+        )}
 
-  const renderProfessionalCard = (item, type) => (
-    <View key={item.id} style={styles.professionalCard}>
-      <View style={styles.professionalHeader}>
-        <View style={styles.professionalImageContainer}>
-          {item.profileImage ? (
-            <Image
-              source={{ uri: getImageUrl(item.profileImage) }}
-              style={styles.professionalImage}
-            />
-          ) : (
+        <View style={styles.placeContent}>
+          <View style={styles.placeHeader}>
+            <Text style={styles.placeName} numberOfLines={1}>
+              {item.placeName}
+            </Text>
+            {item.topPlace && (
+              <View style={styles.topBadge}>
+                <Ionicons name="star" size={12} color="#fff" />
+                <Text style={styles.topBadgeText}>Top</Text>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.ratingContainer}>
+            {renderRating(item.rating)}
+            <Text style={styles.ratingText}>({item.rating?.toFixed(1) || "0.0"})</Text>
+          </View>
+
+          <View style={styles.locationRow}>
+            <Ionicons name="location-outline" size={14} color="#64748b" />
+            <Text style={styles.locationText} numberOfLines={1}>
+              {item.city}, {item.state}
+            </Text>
+          </View>
+
+          <Text style={styles.description} numberOfLines={2}>
+            {item.description || "No description available"}
+          </Text>
+
+          <View style={styles.cardFooter}>
+            <View style={styles.statsContainer}>
+              <View style={styles.statItem}>
+                <Ionicons name="eye-outline" size={14} color="#64748b" />
+                <Text style={styles.statText}>{item.views || 0} views</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Ionicons name="people-outline" size={14} color="#64748b" />
+                <Text style={styles.statText}>{item.guiders || 0} guides</Text>
+              </View>
+            </View>
+            
             <LinearGradient
               colors={['#2c5a73', '#1e3c4f']}
-              style={styles.professionalImagePlaceholder}
+              style={styles.exploreBadge}
             >
-              <Ionicons 
-                name={type === 'guider' ? "people-outline" : "camera-outline"} 
-                size={24} 
-                color="#fff" 
-              />
+              <Text style={styles.exploreBadgeText}>View Details</Text>
             </LinearGradient>
-          )}
-        </View>
-        
-        <View style={styles.professionalInfo}>
-          <Text style={styles.professionalName}>{item.firmName}</Text>
-          <View style={styles.professionalRating}>
-            {renderRating(item.rating)}
-            <Text style={styles.professionalRatingText}>
-              ({item.rating?.toFixed(1) || "0.0"})
-            </Text>
           </View>
-          <Text style={styles.professionalExperience}>
-            {item.experience || 0} years experience
-          </Text>
         </View>
-        
-        <View style={styles.professionalPrice}>
-          <Text style={styles.priceAmount}>₹{item.serviceCost || 0}</Text>
-          <Text style={styles.priceLabel}>/hour</Text>
-        </View>
-      </View>
-
-      <Text style={styles.professionalDescription} numberOfLines={2}>
-        {item.description || "No description available"}
-      </Text>
-
-      <View style={styles.professionalFooter}>
-        <View style={styles.professionalStats}>
-          <View style={styles.professionalStat}>
-            <Ionicons name="briefcase-outline" size={14} color="#64748b" />
-            <Text style={styles.professionalStatText}>
-              {item.totalAppointments || 0} bookings
-            </Text>
-          </View>
-          {item.languages && (
-            <View style={styles.professionalStat}>
-              <Ionicons name="language-outline" size={14} color="#64748b" />
-              <Text style={styles.professionalStatText}>
-                {item.languages}
-              </Text>
-            </View>
-          )}
-        </View>
-
-        <TouchableOpacity
-          style={styles.bookButton}
-          onPress={() => handleBookAppointment(item, type)}
-        >
-          <LinearGradient
-            colors={type === 'guider' ? ["#2c5a73", "#1e3c4f"] : ["#8B5CF6", "#7C3AED"]}
-            style={styles.bookButtonGradient}
-          >
-            <Text style={styles.bookButtonText}>Book Now</Text>
-          </LinearGradient>
-        </TouchableOpacity>
-      </View>
+      </TouchableOpacity>
     </View>
   );
 
@@ -594,190 +453,6 @@ export default function PlaceListScreen({ navigation, route }) {
     </Modal>
   );
 
-  const renderDetailsModal = () => (
-    <Modal
-      visible={detailsModal}
-      transparent={true}
-      animationType="slide"
-      onRequestClose={() => setDetailsModal(false)}
-    >
-      <BlurView intensity={20} style={StyleSheet.absoluteFill} />
-      <View style={styles.modalContainer}>
-        <View style={[styles.modalContent, styles.detailsModalContent]}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Place Details</Text>
-            <TouchableOpacity onPress={() => setDetailsModal(false)}>
-              <Ionicons name="close" size={24} color="#64748b" />
-            </TouchableOpacity>
-          </View>
-
-          {selectedPlace && (
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {/* Place Image */}
-              {selectedPlace.featuredImage ? (
-                <Image
-                  source={{ uri: getImageUrl(selectedPlace.featuredImage) }}
-                  style={styles.detailImage}
-                />
-              ) : (
-                <LinearGradient
-                  colors={['#2c5a73', '#1e3c4f']}
-                  style={styles.detailImagePlaceholder}
-                >
-                  <Ionicons name="image-outline" size={48} color="#fff" />
-                </LinearGradient>
-              )}
-
-              {/* Place Name & Rating */}
-              <View style={styles.detailHeader}>
-                <View style={styles.detailTitleRow}>
-                  <Text style={styles.detailName}>{selectedPlace.placeName}</Text>
-                  {selectedPlace.topPlace && (
-                    <View style={styles.detailTopBadge}>
-                      <Ionicons name="star" size={14} color="#fff" />
-                      <Text style={styles.detailTopText}>Top Rated</Text>
-                    </View>
-                  )}
-                </View>
-                
-                <View style={styles.detailRatingRow}>
-                  <View style={styles.detailRating}>
-                    {renderRating(selectedPlace.rating)}
-                    <Text style={styles.detailRatingText}>
-                      {selectedPlace.rating?.toFixed(1) || "0.0"}
-                    </Text>
-                  </View>
-                  <Text style={styles.detailReviews}>
-                    ({selectedPlace.reviews || 0} reviews)
-                  </Text>
-                </View>
-              </View>
-
-              {/* Location Info */}
-              <View style={styles.detailSection}>
-                <View style={styles.detailLocationRow}>
-                  <Ionicons name="location-outline" size={18} color="#2c5a73" />
-                  <Text style={styles.detailLocationText}>
-                    {selectedPlace.city}, {selectedPlace.state}
-                  </Text>
-                </View>
-                {selectedPlace.fullAddress && (
-                  <Text style={styles.detailAddress}>
-                    {selectedPlace.fullAddress}
-                  </Text>
-                )}
-              </View>
-
-              {/* Description */}
-              {selectedPlace.description && (
-                <View style={styles.detailSection}>
-                  <Text style={styles.detailSectionTitle}>Description</Text>
-                  <Text style={styles.detailDescription}>
-                    {selectedPlace.description}
-                  </Text>
-                </View>
-              )}
-
-              {/* Stats Grid */}
-              <View style={styles.detailStatsGrid}>
-                <View style={styles.detailStatCard}>
-                  <Ionicons name="eye-outline" size={22} color="#2c5a73" />
-                  <Text style={styles.detailStatValue}>{selectedPlace.views || 0}</Text>
-                  <Text style={styles.detailStatLabel}>Views</Text>
-                </View>
-                <View style={styles.detailStatCard}>
-                  <Ionicons name="people-outline" size={22} color="#2c5a73" />
-                  <Text style={styles.detailStatValue}>{selectedPlace.guiders || 0}</Text>
-                  <Text style={styles.detailStatLabel}>Guides</Text>
-                </View>
-                <View style={styles.detailStatCard}>
-                  <Ionicons name="camera-outline" size={22} color="#2c5a73" />
-                  <Text style={styles.detailStatValue}>{selectedPlace.photographers || 0}</Text>
-                  <Text style={styles.detailStatLabel}>Photographers</Text>
-                </View>
-              </View>
-
-              {/* Tabs for Guides and Photographers */}
-              <View style={styles.tabContainer}>
-                <TouchableOpacity
-                  style={[styles.tab, activeTab === "guides" && styles.activeTab]}
-                  onPress={() => setActiveTab("guides")}
-                >
-                  <Ionicons 
-                    name="people-outline" 
-                    size={18} 
-                    color={activeTab === "guides" ? "#2c5a73" : "#64748b"} 
-                  />
-                  <Text style={[styles.tabText, activeTab === "guides" && styles.activeTabText]}>
-                    Guides ({placeGuides.length})
-                  </Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity
-                  style={[styles.tab, activeTab === "photographers" && styles.activeTab]}
-                  onPress={() => setActiveTab("photographers")}
-                >
-                  <Ionicons 
-                    name="camera-outline" 
-                    size={18} 
-                    color={activeTab === "photographers" ? "#2c5a73" : "#64748b"} 
-                  />
-                  <Text style={[styles.tabText, activeTab === "photographers" && styles.activeTabText]}>
-                    Photographers ({placePhotographers.length})
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Guides List */}
-              {activeTab === "guides" && (
-                <View style={styles.professionalsList}>
-                  {loadingGuides ? (
-                    <View style={styles.loadingContainer}>
-                      <ActivityIndicator size="small" color="#2c5a73" />
-                      <Text style={styles.loadingText}>Loading guides...</Text>
-                    </View>
-                  ) : placeGuides.length > 0 ? (
-                    placeGuides.map(guide => renderProfessionalCard(guide, 'guider'))
-                  ) : (
-                    <View style={styles.emptyProfessionals}>
-                      <Ionicons name="people-outline" size={48} color="#cbd5e1" />
-                      <Text style={styles.emptyProfessionalsTitle}>No Guides Available</Text>
-                      <Text style={styles.emptyProfessionalsText}>
-                        There are no guides for this place yet
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              )}
-
-              {/* Photographers List */}
-              {activeTab === "photographers" && (
-                <View style={styles.professionalsList}>
-                  {loadingPhotographers ? (
-                    <View style={styles.loadingContainer}>
-                      <ActivityIndicator size="small" color="#8B5CF6" />
-                      <Text style={styles.loadingText}>Loading photographers...</Text>
-                    </View>
-                  ) : placePhotographers.length > 0 ? (
-                    placePhotographers.map(photographer => renderProfessionalCard(photographer, 'photographer'))
-                  ) : (
-                    <View style={styles.emptyProfessionals}>
-                      <Ionicons name="camera-outline" size={48} color="#cbd5e1" />
-                      <Text style={styles.emptyProfessionalsTitle}>No Photographers Available</Text>
-                      <Text style={styles.emptyProfessionalsText}>
-                        There are no photographers for this place yet
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              )}
-            </ScrollView>
-          )}
-        </View>
-      </View>
-    </Modal>
-  );
-
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -813,11 +488,6 @@ export default function PlaceListScreen({ navigation, route }) {
             </TouchableOpacity>
           ) : null}
         </View>
-
-        {/* Results Count */}
-        {/* <Text style={styles.resultsCount}>
-          {filteredPlaces.length} places found
-        </Text> */}
       </LinearGradient>
 
       {/* Places List */}
@@ -860,9 +530,8 @@ export default function PlaceListScreen({ navigation, route }) {
         />
       )}
 
-      {/* Modals */}
+      {/* Filter Modal */}
       {renderFilterModal()}
-      {renderDetailsModal()}
     </View>
   );
 }
@@ -931,6 +600,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 4,
+    position: "relative", // For absolute positioning of like button
   },
   placeImage: {
     width: "100%",
@@ -1085,9 +755,6 @@ const styles = StyleSheet.create({
     padding: 20,
     maxHeight: "90%",
   },
-  detailsModalContent: {
-    maxHeight: "95%",
-  },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1232,278 +899,19 @@ const styles = StyleSheet.create({
     color: "#fff",
   },
 
-  // Details Modal Styles
-  detailImage: {
-    width: "100%",
-    height: 200,
+  // ✅ Like button style (same as other screens)
+  cardLikeButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(255,255,255,0.9)',
     borderRadius: 16,
-    marginBottom: 16,
-  },
-  detailImagePlaceholder: {
-    width: "100%",
-    height: 200,
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  detailHeader: {
-    marginBottom: 16,
-  },
-  detailTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 8,
-  },
-  detailName: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#1e293b",
-    flex: 1,
-  },
-  detailTopBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F59E0B",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    marginLeft: 8,
-  },
-  detailTopText: {
-    fontSize: 12,
-    color: "#fff",
-    fontWeight: "600",
-    marginLeft: 4,
-  },
-  detailRatingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  detailRating: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginRight: 8,
-  },
-  detailRatingText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#F59E0B",
-    marginLeft: 4,
-  },
-  detailReviews: {
-    fontSize: 13,
-    color: "#64748b",
-  },
-  detailSection: {
-    marginBottom: 20,
-  },
-  detailSectionTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#1e293b",
-    marginBottom: 8,
-  },
-  detailLocationRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 4,
-  },
-  detailLocationText: {
-    fontSize: 15,
-    color: "#1e293b",
-    marginLeft: 8,
-  },
-  detailAddress: {
-    fontSize: 13,
-    color: "#64748b",
-    lineHeight: 18,
-  },
-  detailDescription: {
-    fontSize: 14,
-    color: "#475569",
-    lineHeight: 20,
-  },
-  detailStatsGrid: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 24,
-  },
-  detailStatCard: {
-    flex: 1,
-    backgroundColor: "#f8fafc",
-    borderRadius: 12,
-    padding: 12,
-    alignItems: "center",
-    marginHorizontal: 4,
-  },
-  detailStatValue: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#1e293b",
-    marginTop: 4,
-  },
-  detailStatLabel: {
-    fontSize: 11,
-    color: "#64748b",
-    marginTop: 2,
-  },
-
-  // Tab Styles
-  tabContainer: {
-    flexDirection: "row",
-    backgroundColor: "#f1f5f9",
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 20,
-  },
-  tab: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 10,
-    borderRadius: 8,
-    gap: 6,
-  },
-  activeTab: {
-    backgroundColor: "#fff",
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
+    padding: 6,
+    zIndex: 10,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  tabText: {
-    fontSize: 13,
-    fontWeight: "500",
-    color: "#64748b",
-  },
-  activeTabText: {
-    color: "#2c5a73",
-    fontWeight: "600",
-  },
-
-  // Professional Card Styles
-  professionalsList: {
-    marginBottom: 20,
-  },
-  professionalCard: {
-    backgroundColor: "#f8fafc",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-  },
-  professionalHeader: {
-    flexDirection: "row",
-    marginBottom: 12,
-  },
-  professionalImageContainer: {
-    marginRight: 12,
-  },
-  professionalImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-  },
-  professionalImagePlaceholder: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  professionalInfo: {
-    flex: 1,
-  },
-  professionalName: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#1e293b",
-    marginBottom: 4,
-  },
-  professionalRating: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 4,
-  },
-  professionalRatingText: {
-    fontSize: 12,
-    color: "#64748b",
-    marginLeft: 4,
-  },
-  professionalExperience: {
-    fontSize: 12,
-    color: "#64748b",
-  },
-  professionalPrice: {
-    alignItems: "flex-end",
-  },
-  priceAmount: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#2c5a73",
-  },
-  priceLabel: {
-    fontSize: 11,
-    color: "#64748b",
-  },
-  professionalDescription: {
-    fontSize: 13,
-    color: "#475569",
-    lineHeight: 18,
-    marginBottom: 12,
-  },
-  professionalFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  professionalStats: {
-    flex: 1,
-  },
-  professionalStat: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 4,
-  },
-  professionalStatText: {
-    fontSize: 12,
-    color: "#64748b",
-    marginLeft: 6,
-  },
-  bookButton: {
-    borderRadius: 8,
-    overflow: "hidden",
-  },
-  bookButtonGradient: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    alignItems: "center",
-  },
-  bookButtonText: {
-    color: "#fff",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  emptyProfessionals: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 40,
-  },
-  emptyProfessionalsTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#1e293b",
-    marginTop: 12,
-    marginBottom: 4,
-  },
-  emptyProfessionalsText: {
-    fontSize: 13,
-    color: "#64748b",
-    textAlign: "center",
+    shadowRadius: 4,
   },
 });

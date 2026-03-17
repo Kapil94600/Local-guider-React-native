@@ -13,12 +13,15 @@ import {
   Platform,
   Dimensions,
   Modal,
+  FlatList,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthContext } from "../../context/AuthContext";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import api from "../../api/apiClient";
+import { API } from "../../api/endpoints";
 
 const { width, height } = Dimensions.get("window");
 const BASE_URL = "https://localguider.sinfode.com";
@@ -38,6 +41,15 @@ export default function PhotographerRequestScreen({ navigation }) {
   const [currentStep, setCurrentStep] = useState(1);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
+  // ✅ Available places from backend
+  const [availablePlaces, setAvailablePlaces] = useState([]);
+  const [loadingPlaces, setLoadingPlaces] = useState(false);
+  const [selectedPlaces, setSelectedPlaces] = useState([]); // array of selected place objects
+
+  // ✅ Place selection modal state
+  const [placeModalVisible, setPlaceModalVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+
   useEffect(() => {
     const getTokenFromStorage = async () => {
       try {
@@ -49,7 +61,55 @@ export default function PhotographerRequestScreen({ navigation }) {
       }
     };
     getTokenFromStorage();
+    fetchPlaces();
   }, []);
+
+  // ✅ Fetch places from API
+  const fetchPlaces = async () => {
+    setLoadingPlaces(true);
+    try {
+      const response = await api.post(API.GET_PLACES, {
+        page: 1,
+        perPage: 100, // get all places
+      });
+      if (response.data?.status) {
+        setAvailablePlaces(response.data.data || []);
+      }
+    } catch (error) {
+      console.error("Error fetching places:", error);
+      Alert.alert("Error", "Failed to load places list");
+    } finally {
+      setLoadingPlaces(false);
+    }
+  };
+
+  // ✅ Filter places based on search query
+  const filteredPlaces = availablePlaces.filter(place =>
+    place.placeName.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // ✅ Toggle place selection (max 3)
+  const togglePlace = (place) => {
+    setSelectedPlaces(prev => {
+      const isSelected = prev.some(p => p.id === place.id);
+      if (isSelected) {
+        // Remove
+        return prev.filter(p => p.id !== place.id);
+      } else {
+        // Add, but max 3
+        if (prev.length >= 3) {
+          Alert.alert("Limit Reached", "You can select up to 3 places only");
+          return prev;
+        }
+        return [...prev, place];
+      }
+    });
+  };
+
+  // ✅ Remove a selected place (used by chips)
+  const removeSelectedPlace = (placeId) => {
+    setSelectedPlaces(prev => prev.filter(p => p.id !== placeId));
+  };
 
   // ✅ Form state matches backend exactly
   const [form, setForm] = useState({
@@ -59,15 +119,32 @@ export default function PhotographerRequestScreen({ navigation }) {
     idProofFront: null,
     idProofBack: null,
     photograph: null,
-    idProofType: "Aadhaar",
+    idProofType: "Aadhaar Card",
     description: "",
     phone: user?.phone || "",
     email: user?.email || "",
-    placeId: "",
-    places: "",
+    placeId: "", // primary place id (first selected)
+    places: "", // comma-separated place ids
     address: "",
     services: [],
   });
+
+  // Update form when selectedPlaces changes
+  useEffect(() => {
+    if (selectedPlaces.length > 0) {
+      setForm(prev => ({
+        ...prev,
+        placeId: selectedPlaces[0].id.toString(),
+        places: selectedPlaces.map(p => p.id).join(',')
+      }));
+    } else {
+      setForm(prev => ({
+        ...prev,
+        placeId: "",
+        places: ""
+      }));
+    }
+  }, [selectedPlaces]);
 
   // ✅ Add service function
   const addService = () => {
@@ -238,12 +315,8 @@ export default function PhotographerRequestScreen({ navigation }) {
       Alert.alert("Error", "Phone number is required");
       return false;
     }
-    if (!form.placeId.trim()) {
-      Alert.alert("Error", "Primary place ID is required");
-      return false;
-    }
-    if (!form.places.trim()) {
-      Alert.alert("Error", "Places information is required");
+    if (selectedPlaces.length === 0) {
+      Alert.alert("Error", "Please select at least one place");
       return false;
     }
     if (!ID_PROOF_TYPES.includes(form.idProofType)) {
@@ -486,6 +559,147 @@ export default function PhotographerRequestScreen({ navigation }) {
     </View>
   );
 
+  // ✅ Render place selection button and chips
+  const renderPlaceSelection = () => (
+    <View style={styles.placeSection}>
+      <Text style={styles.label}>Service Areas (Select up to 3) *</Text>
+      
+      {/* Button to open modal */}
+      <TouchableOpacity
+        style={styles.selectPlaceButton}
+        onPress={() => setPlaceModalVisible(true)}
+      >
+        <LinearGradient
+          colors={['#2c5a73', '#1e3c4f']}
+          style={styles.selectPlaceGradient}
+        >
+          <Ionicons name="map-outline" size={18} color="#fff" />
+          <Text style={styles.selectPlaceButtonText}>
+            {selectedPlaces.length > 0 
+              ? `${selectedPlaces.length} place${selectedPlaces.length > 1 ? 's' : ''} selected`
+              : 'Select service areas'}
+          </Text>
+          <Ionicons name="chevron-down" size={18} color="#fff" />
+        </LinearGradient>
+      </TouchableOpacity>
+
+      {/* Display selected places as chips */}
+      {selectedPlaces.length > 0 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.selectedPlacesScroll}>
+          {selectedPlaces.map((place) => (
+            <View key={place.id} style={styles.selectedPlaceChip}>
+              <Text style={styles.selectedPlaceChipText}>{place.placeName}</Text>
+              <TouchableOpacity onPress={() => removeSelectedPlace(place.id)}>
+                <Ionicons name="close-circle" size={16} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          ))}
+        </ScrollView>
+      )}
+
+      <Text style={styles.hintText}>
+        You can select up to 3 places. The first will be your primary service area.
+      </Text>
+
+      {/* Place Selection Modal with KeyboardAvoidingView */}
+      <Modal
+        visible={placeModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setPlaceModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={styles.modalContainer}
+          >
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Service Areas</Text>
+              <TouchableOpacity onPress={() => setPlaceModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalSubtitle}>
+              Choose up to 3 places where you offer services
+            </Text>
+
+            {/* Search Input */}
+            <View style={styles.searchContainer}>
+              <Ionicons name="search" size={18} color="#94a3b8" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search places..."
+                placeholderTextColor="#94a3b8"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery('')}>
+                  <Ionicons name="close-circle" size={16} color="#94a3b8" />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {loadingPlaces ? (
+              <ActivityIndicator size="large" color="#2c5a73" style={{ marginVertical: 20 }} />
+            ) : (
+              <FlatList
+                data={filteredPlaces}
+                keyExtractor={(item) => item.id.toString()}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.modalList}
+                keyboardShouldPersistTaps="handled" // Allows tapping items while keyboard is open
+                ListEmptyComponent={
+                  <Text style={styles.emptyListText}>No places found</Text>
+                }
+                renderItem={({ item }) => {
+                  const isSelected = selectedPlaces.some(p => p.id === item.id);
+                  return (
+                    <TouchableOpacity
+                      style={styles.modalItem}
+                      onPress={() => togglePlace(item)}
+                      disabled={!isSelected && selectedPlaces.length >= 3}
+                    >
+                      <View style={styles.modalItemLeft}>
+                        <Ionicons
+                          name={isSelected ? "checkbox" : "square-outline"}
+                          size={22}
+                          color={isSelected ? "#2c5a73" : "#94a3b8"}
+                        />
+                        <Text style={[styles.modalItemText, isSelected && styles.modalItemTextSelected]}>
+                          {item.placeName}
+                        </Text>
+                      </View>
+                      {isSelected && (
+                        <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                      )}
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+            )}
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setPlaceModalVisible(false)}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalConfirmBtn, { backgroundColor: '#2c5a73' }]}
+                onPress={() => setPlaceModalVisible(false)}
+              >
+                <Text style={styles.modalConfirmText}>Confirm ({selectedPlaces.length}/3)</Text>
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+    </View>
+  );
+
   // ✅ Success Modal
   const renderSuccessModal = () => (
     <Modal
@@ -494,7 +708,7 @@ export default function PhotographerRequestScreen({ navigation }) {
       animationType="fade"
       onRequestClose={() => setShowSuccessModal(false)}
     >
-      <View style={styles.modalOverlay}>
+      <View style={styles.successModalOverlay}>
         <View style={styles.modalContent}>
           <View style={styles.successIconContainer}>
             <LinearGradient
@@ -644,34 +858,8 @@ export default function PhotographerRequestScreen({ navigation }) {
                 />
               </View>
 
-              <View style={styles.locationRow}>
-                <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
-                  <Ionicons name="map-outline" size={20} color="#2c5a73" style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Place ID *"
-                    placeholderTextColor="#94a3b8"
-                    value={form.placeId}
-                    onChangeText={(text) => setForm({...form, placeId: text})}
-                    keyboardType="number-pad"
-                  />
-                </View>
-                
-                <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
-                  <Ionicons name="grid-outline" size={20} color="#2c5a73" style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Other Places"
-                    placeholderTextColor="#94a3b8"
-                    value={form.places}
-                    onChangeText={(text) => setForm({...form, places: text})}
-                  />
-                </View>
-              </View>
-
-              <Text style={styles.hintText}>
-                <Ionicons name="information-circle" size={14} color="#64748b" /> Enter place IDs separated by commas
-              </Text>
+              {/* Place selection */}
+              {renderPlaceSelection()}
             </View>
           )}
 
@@ -698,7 +886,7 @@ export default function PhotographerRequestScreen({ navigation }) {
                   >
                     <Text style={[
                       styles.idTypeChipText,
-                      form.idTypeProofType === type && styles.idTypeChipTextActive
+                      form.idProofType === type && styles.idTypeChipTextActive
                     ]}>
                       {type}
                     </Text>
@@ -785,6 +973,12 @@ export default function PhotographerRequestScreen({ navigation }) {
                 <View style={styles.reviewItem}>
                   <Text style={styles.reviewLabel}>Address</Text>
                   <Text style={styles.reviewValue}>{form.address}</Text>
+                </View>
+                <View style={styles.reviewItem}>
+                  <Text style={styles.reviewLabel}>Service Areas</Text>
+                  <Text style={styles.reviewValue}>
+                    {selectedPlaces.map(p => p.placeName).join(', ')}
+                  </Text>
                 </View>
               </View>
 
@@ -1025,10 +1219,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     marginBottom: 8,
   },
-  locationRow: {
-    flexDirection: 'row',
-    marginBottom: 8,
-  },
   hintText: {
     fontSize: 12,
     color: '#64748b',
@@ -1036,13 +1226,56 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
 
-  // Document Upload
+  // Place Selection
+  placeSection: {
+    marginTop: 8,
+  },
   label: {
     fontSize: 14,
     fontWeight: '500',
     color: '#1e293b',
     marginBottom: 8,
   },
+  selectPlaceButton: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  selectPlaceGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  selectPlaceButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    flex: 1,
+    marginLeft: 8,
+  },
+  selectedPlacesScroll: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  selectedPlaceChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2c5a73',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginRight: 8,
+  },
+  selectedPlaceChipText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '500',
+    marginRight: 6,
+  },
+
+  // Document Upload
   idTypeScroll: {
     flexDirection: 'row',
     marginBottom: 16,
@@ -1449,8 +1682,122 @@ const styles = StyleSheet.create({
     marginLeft: 6,
   },
 
-  // Success Modal
+  // Modal Styles (for place selection)
   modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContainer: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    maxHeight: '90%',
+    width: '100%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1e293b',
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: '#64748b',
+    marginBottom: 16,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    marginBottom: 16,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: '#1e293b',
+    marginLeft: 8,
+  },
+  modalList: {
+    paddingBottom: 16,
+  marginBottom: 316,
+  },
+  emptyListText: {
+    textAlign: 'center',
+    color: '#94a3b8',
+    fontSize: 14,
+    paddingVertical: 20,
+  },
+  modalItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  modalItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  modalItemText: {
+    fontSize: 15,
+    color: '#1e293b',
+    marginLeft: 12,
+    flex: 1,
+  },
+  modalItemTextSelected: {
+    fontWeight: '600',
+    color: '#2c5a73',
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+    paddingTop: 16,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  modalCancelText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#64748b',
+  },
+  modalConfirmBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    marginLeft: 8,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  modalConfirmText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
+  },
+
+  // Success Modal (separate overlay)
+  successModalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',

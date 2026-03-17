@@ -7,36 +7,26 @@ import {
   Text,
   StyleSheet,
   ActivityIndicator,
-  Keyboard,
   Animated,
-  Dimensions,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { searchPlaces } from "../../api/map";
 import { LocationContext } from "../../context/LocationContext";
+import api from "../../api/apiClient";
 import * as Location from "expo-location";
 
-const { width } = Dimensions.get("window");
-
 export default function LocationSearchScreen({ navigation }) {
-  const { setLocation, location: currentLocation } = useContext(LocationContext);
-  const [list, setList] = useState([]);
+  const { setLocation } = useContext(LocationContext);
   const [searchText, setSearchText] = useState("");
+  const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [recentSearches, setRecentSearches] = useState([]);
-  const [suggestions, setSuggestions] = useState([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  
+
   const searchInputRef = useRef(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
 
   useEffect(() => {
-    // Load recent searches from storage (you can implement AsyncStorage later)
-    loadRecentSearches();
-    
-    // Animate entrance
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -52,91 +42,54 @@ export default function LocationSearchScreen({ navigation }) {
     ]).start();
   }, []);
 
-  const loadRecentSearches = () => {
-    // Mock recent searches - replace with AsyncStorage later
-    setRecentSearches([
-      { id: 1, name: "New Delhi", type: "city" },
-      { id: 2, name: "Mumbai", type: "city" },
-      { id: 3, name: "Jaipur", type: "city" },
-      { id: 4, name: "Agra", type: "city" },
-    ]);
-  };
-
+  // Search function – calls the backend with searchText
   const onSearch = async (text) => {
     setSearchText(text);
-    
-    // Generate suggestions as user types
-    if (text.length > 0) {
-      const mockSuggestions = generateSuggestions(text);
-      setSuggestions(mockSuggestions);
-      setShowSuggestions(true);
-    } else {
-      setSuggestions([]);
-      setShowSuggestions(false);
+
+    if (text.length < 2) {
+      setResults([]);
+      return;
     }
 
-    // Actual API search
-    if (text.length >= 2) {
-      setLoading(true);
-      try {
-        const res = await searchPlaces(text);
-        setList(res || []);
-      } catch (error) {
-        console.error("Search error:", error);
-      } finally {
-        setLoading(false);
+    setLoading(true);
+    try {
+      // Send POST with searchText as query parameter
+      const response = await api.post("/map/get_places", null, {
+        params: { searchText: text },
+      });
+
+      if (response.data?.predictions) {
+        setResults(response.data.predictions);
+      } else {
+        setResults([]);
       }
-    } else {
-      setList([]);
+    } catch (error) {
+      console.error("Search error:", error);
+      Alert.alert("Error", "Failed to search locations");
+    } finally {
+      setLoading(false);
     }
-  };
-
-  const generateSuggestions = (text) => {
-    // Mock suggestions based on input
-    const suggestions = [
-      { id: 1, text: `${text} City`, type: "city" },
-      { id: 2, text: `${text} District`, type: "district" },
-      { id: 3, text: `${text} Area`, type: "area" },
-      { id: 4, text: `${text} Locality`, type: "locality" },
-    ];
-    return suggestions.filter(s => s.text.toLowerCase().includes(text.toLowerCase()));
-  };
-
-  const handleSelectSuggestion = (suggestion) => {
-    setSearchText(suggestion.text);
-    setShowSuggestions(false);
-    // Trigger search with selected suggestion
-    onSearch(suggestion.text);
   };
 
   const handleSelectLocation = (item) => {
+    // item contains description, place_id, latitude, longitude (added by backend)
     const locationData = {
-      latitude: parseFloat(item.lat),
-      longitude: parseFloat(item.lon),
-      city: item.display_name.split(',')[0].trim(),
-      state: item.display_name.split(',').slice(-2, -1)[0]?.trim() || "",
-      fullAddress: item.display_name,
+      latitude: item.latitude,
+      longitude: item.longitude,
+      city: item.description.split(',')[0]?.trim() || "",
+      fullAddress: item.description,
       source: "MANUAL",
     };
-    
-    setLocation(locationData);
-    
-    // Save to recent searches
-    saveToRecentSearches(item.display_name.split(',')[0].trim());
-    
-    navigation.goBack();
-  };
 
-  const saveToRecentSearches = (locationName) => {
-    // Implement AsyncStorage saving later
-    console.log("Saved to recent:", locationName);
+    setLocation(locationData);
+    navigation.goBack();
   };
 
   const handleUseCurrentLocation = async () => {
     try {
       setLoading(true);
       const { status } = await Location.requestForegroundPermissionsAsync();
-      
+
       if (status !== 'granted') {
         Alert.alert("Permission Denied", "Please allow location access to use this feature");
         return;
@@ -167,25 +120,8 @@ export default function LocationSearchScreen({ navigation }) {
     }
   };
 
-  const highlightMatch = (text, searchTerm) => {
-    if (!searchTerm) return text;
-    
-    const parts = text.split(new RegExp(`(${searchTerm})`, 'gi'));
-    return (
-      <Text>
-        {parts.map((part, index) => 
-          part.toLowerCase() === searchTerm.toLowerCase() ? (
-            <Text key={index} style={styles.highlightedText}>{part}</Text>
-          ) : (
-            <Text key={index}>{part}</Text>
-          )
-        )}
-      </Text>
-    );
-  };
-
   const renderSearchHeader = () => (
-    <Animated.View 
+    <Animated.View
       style={[
         styles.searchHeader,
         {
@@ -208,9 +144,7 @@ export default function LocationSearchScreen({ navigation }) {
           >
             <Ionicons name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
-
           <Text style={styles.headerTitle}>Find Your Location</Text>
-
           <View style={{ width: 38 }} />
         </View>
 
@@ -219,7 +153,7 @@ export default function LocationSearchScreen({ navigation }) {
         </Text>
 
         {/* Current Location Button */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.currentLocationBtn}
           onPress={handleUseCurrentLocation}
           activeOpacity={0.8}
@@ -244,38 +178,16 @@ export default function LocationSearchScreen({ navigation }) {
             onChangeText={onSearch}
             value={searchText}
             style={styles.input}
-            onFocus={() => setShowSuggestions(true)}
-            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
           />
           {searchText.length > 0 && (
             <TouchableOpacity onPress={() => {
               setSearchText("");
-              setList([]);
-              setSuggestions([]);
-              setShowSuggestions(false);
+              setResults([]);
             }}>
               <Ionicons name="close-circle" size={18} color="#94a3b8" />
             </TouchableOpacity>
           )}
         </View>
-
-        {/* Suggestions Dropdown */}
-        {showSuggestions && suggestions.length > 0 && (
-          <View style={styles.suggestionsContainer}>
-            {suggestions.map((suggestion) => (
-              <TouchableOpacity
-                key={suggestion.id}
-                style={styles.suggestionItem}
-                onPress={() => handleSelectSuggestion(suggestion)}
-              >
-                <Ionicons name="search-outline" size={16} color="#64748b" />
-                <Text style={styles.suggestionText}>
-                  {highlightMatch(suggestion.text, searchText)}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
       </LinearGradient>
     </Animated.View>
   );
@@ -284,8 +196,8 @@ export default function LocationSearchScreen({ navigation }) {
     <View style={styles.container}>
       {renderSearchHeader()}
 
-      {/* Main Content */}
-      <Animated.View 
+      {/* Results */}
+      <Animated.View
         style={[
           styles.body,
           {
@@ -294,65 +206,15 @@ export default function LocationSearchScreen({ navigation }) {
           }
         ]}
       >
-        {/* Recent Searches */}
-        {!searchText && recentSearches.length > 0 && (
-          <View style={styles.recentSection}>
-            <View style={styles.recentHeader}>
-              <Ionicons name="time-outline" size={18} color="#64748b" />
-              <Text style={styles.recentTitle}>Recent Searches</Text>
-            </View>
-            <FlatList
-              horizontal
-              data={recentSearches}
-              keyExtractor={(item) => item.id.toString()}
-              showsHorizontalScrollIndicator={false}
-              renderItem={({ item }) => (
-                <TouchableOpacity 
-                  style={styles.recentChip}
-                  onPress={() => setSearchText(item.name)}
-                >
-                  <Ionicons name="location-outline" size={14} color="#2c5a73" />
-                  <Text style={styles.recentChipText}>{item.name}</Text>
-                </TouchableOpacity>
-              )}
-            />
-          </View>
-        )}
-
-        {/* Popular Locations */}
-        {!searchText && (
-          <View style={styles.popularSection}>
-            <View style={styles.popularHeader}>
-              <Ionicons name="star-outline" size={18} color="#64748b" />
-              <Text style={styles.popularTitle}>Popular Destinations</Text>
-            </View>
-            <View style={styles.popularGrid}>
-              {["Delhi", "Mumbai", "Jaipur", "Agra", "Goa", "Varanasi"].map((city, index) => (
-                <TouchableOpacity 
-                  key={index}
-                  style={styles.popularItem}
-                  onPress={() => setSearchText(city)}
-                >
-                  <View style={styles.popularIcon}>
-                    <Ionicons name="location" size={16} color="#2c5a73" />
-                  </View>
-                  <Text style={styles.popularItemText}>{city}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {/* Search Results */}
         {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#2c5a73" />
-            <Text style={styles.loadingText}>Finding locations...</Text>
+            <Text style={styles.loadingText}>Searching...</Text>
           </View>
         ) : (
           <FlatList
-            data={list}
-            keyExtractor={(i) => i.place_id?.toString() || Math.random().toString()}
+            data={results}
+            keyExtractor={(item) => item.place_id}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: 30 }}
             ListEmptyComponent={
@@ -367,7 +229,15 @@ export default function LocationSearchScreen({ navigation }) {
                     Try checking the spelling or search for a nearby area
                   </Text>
                 </View>
-              ) : null
+              ) : (
+                <View style={styles.emptyContainer}>
+                  <Ionicons name="map-outline" size={64} color="#cbd5e1" />
+                  <Text style={styles.emptyTitle}>Start searching</Text>
+                  <Text style={styles.emptyText}>
+                    Type at least 2 characters to find locations
+                  </Text>
+                </View>
+              )
             }
             renderItem={({ item, index }) => (
               <Animated.View
@@ -392,17 +262,11 @@ export default function LocationSearchScreen({ navigation }) {
                     </View>
                     <View style={styles.resultContent}>
                       <Text style={styles.resultTitle} numberOfLines={1}>
-                        {item.display_name.split(',')[0]}
+                        {item.description.split(',')[0]}
                       </Text>
                       <Text style={styles.resultAddress} numberOfLines={2}>
-                        {item.display_name}
+                        {item.description}
                       </Text>
-                      <View style={styles.resultMeta}>
-                        <Ionicons name="time-outline" size={12} color="#94a3b8" />
-                        <Text style={styles.resultMetaText}>
-                          {Math.floor(Math.random() * 10) + 1} km away
-                        </Text>
-                      </View>
                     </View>
                   </View>
                   <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
@@ -505,124 +369,9 @@ const styles = StyleSheet.create({
     color: "#1e293b",
     padding: 0,
   },
-  suggestionsContainer: {
-    position: "absolute",
-    top: 180,
-    left: 20,
-    right: 20,
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 8,
-    elevation: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    zIndex: 20,
-  },
-  suggestionItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
-  },
-  suggestionText: {
-    marginLeft: 12,
-    fontSize: 14,
-    color: "#1e293b",
-    flex: 1,
-  },
-  highlightedText: {
-    backgroundColor: "#fef3c7",
-    color: "#92400e",
-    fontWeight: "600",
-  },
   body: {
     flex: 1,
     padding: 16,
-  },
-  recentSection: {
-    marginBottom: 24,
-  },
-  recentHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  recentTitle: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#1e293b",
-    marginLeft: 8,
-  },
-  recentChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 25,
-    marginRight: 10,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-  },
-  recentChipText: {
-    fontSize: 13,
-    color: "#2c5a73",
-    marginLeft: 6,
-    fontWeight: "500",
-  },
-  popularSection: {
-    marginBottom: 24,
-  },
-  popularHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  popularTitle: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#1e293b",
-    marginLeft: 8,
-  },
-  popularGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-  },
-  popularItem: {
-    width: "48%",
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 8,
-    elevation: 1,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-  },
-  popularIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: "#f1f5f9",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 10,
-  },
-  popularItemText: {
-    fontSize: 13,
-    color: "#1e293b",
-    fontWeight: "500",
   },
   loadingContainer: {
     flex: 1,
@@ -700,15 +449,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#64748b",
     lineHeight: 18,
-    marginBottom: 4,
-  },
-  resultMeta: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  resultMetaText: {
-    fontSize: 11,
-    color: "#94a3b8",
-    marginLeft: 4,
   },
 });

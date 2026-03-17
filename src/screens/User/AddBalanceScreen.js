@@ -124,7 +124,7 @@ export default function AddBalanceScreen({ navigation }) {
       // -----------------------------------------------------------------
       // 🔁 REPLACE THIS LINE WITH THE CORRECT STATUS STRING (once known)
       // -----------------------------------------------------------------
-      await updateTransaction(orderId, "Success");
+    await updateTransaction(orderId, "success");
       // -----------------------------------------------------------------
 
       Alert.alert("Success", "Payment Successful");

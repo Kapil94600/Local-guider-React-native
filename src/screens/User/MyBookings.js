@@ -206,11 +206,27 @@ export default function MyBookings({ navigation }) {
 
                 <View style={styles.bookingFooter}>
                     <Text style={styles.bookingId}>ID: {item.id || 'N/A'}</Text>
-                    {displayStatus === 'pending' && (
-                        <TouchableOpacity style={styles.cancelBtn} onPress={() => cancelBooking(item.id)}>
-                            <Text style={styles.cancelBtnText}>Cancel</Text>
-                        </TouchableOpacity>
-                    )}
+                    <View style={styles.actionButtons}>
+                        {displayStatus === 'pending' && (
+                            <TouchableOpacity style={styles.cancelBtn} onPress={() => cancelBooking(item.id)}>
+                                <Text style={styles.cancelBtnText}>Cancel</Text>
+                            </TouchableOpacity>
+                        )}
+                        {displayStatus === 'completed' && (
+                            <TouchableOpacity
+                                style={styles.reviewBtn}
+                                onPress={() => navigation.navigate('ReviewScreen', {
+                                    appointmentId: item.id,
+                                    providerId: item.photographerId || item.guiderId,
+                                    providerType: item.photographerId ? 'photographer' : 'guider',
+                                    providerName: getProviderName(item),
+                                    serviceName: item.serviceName || 'Service',
+                                })}
+                            >
+                                <Text style={styles.reviewBtnText}>Write Review</Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
                 </View>
             </View>
         );
@@ -354,6 +370,9 @@ const styles = StyleSheet.create({
     detailText: { fontSize: 13, color: "#64748b" },
     bookingFooter: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
     bookingId: { fontSize: 11, color: "#94a3b8" },
+    actionButtons: { flexDirection: "row", gap: 8 },
     cancelBtn: { backgroundColor: "#fee2e2", paddingHorizontal: 16, paddingVertical: 6, borderRadius: 16 },
     cancelBtnText: { color: "#ef4444", fontSize: 12, fontWeight: "500" },
+    reviewBtn: { backgroundColor: "#50869a", paddingHorizontal: 16, paddingVertical: 6, borderRadius: 16 },
+    reviewBtnText: { color: "#fff", fontSize: 12, fontWeight: "500" },
 });

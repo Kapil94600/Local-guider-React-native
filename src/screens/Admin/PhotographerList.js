@@ -14,19 +14,18 @@ import {
   Dimensions,
   Modal,
   ScrollView,
-  TextInput,
 } from "react-native";
 import { MaterialCommunityIcons as Icon } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import { SafeAreaView } from "react-native-safe-area-context";
 import api from "../../api/apiClient";
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API } from "../../api/endpoints";
 
 const { width } = Dimensions.get("window");
 const BASE_URL = "https://localguider.sinfode.com";
 
-// 🔥 Get image URL from filename
+// Get image URL from filename
 const getImageUrl = (filename) => {
   if (!filename) return null;
   if (filename.startsWith('http')) return filename;
@@ -42,7 +41,7 @@ const getImageUrl = (filename) => {
   return `${BASE_URL}/api/image/download/${imageName}`;
 };
 
-// 🔥 Image Component
+// Image Component
 const PhotographerImage = ({ imagePath, style }) => {
   const [imageUrl, setImageUrl] = useState(null);
   const [error, setError] = useState(false);
@@ -81,61 +80,33 @@ export default function PhotographerList({ navigation }) {
   const [detailsModalVisible, setDetailsModalVisible] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // Load token on mount
-  useEffect(() => {
-    const loadToken = async () => {
-      try {
-        const storedToken = await AsyncStorage.getItem('userToken');
-        console.log('📸 Token loaded:', storedToken ? 'Yes' : 'No');
-      } catch (error) {
-        console.error('Error loading token:', error);
-      }
-    };
-    loadToken();
-  }, []);
-
-  const loadPhotographers = async () => {
+  // ✅ Load only approved photographers directly from photographers endpoint
+  const loadApprovedPhotographers = async () => {
     try {
       setLoading(true);
       console.log('📸 Loading approved photographers...');
-      
-      // Get users with photographer flag
-      const usersResponse = await api.post("/user/get_user_list", {
-        page: 1,
-        perPage: 100
-      });
-      
-      const users = usersResponse?.data?.data || [];
-      
-      // Filter users who are photographers AND have pid (approved)
-      const photographerUsers = users.filter(u => 
-        u.photographer === true && u.pid !== null
-      );
-      
-      console.log(`📸 Found ${photographerUsers.length} approved photographers`);
-      
-      if (photographerUsers.length > 0) {
-        // Create photographer objects from user data
-        const photographerData = photographerUsers.map(user => ({
-          id: user.pid,
-          userId: user.id,
-          firmName: user.name,
-          name: user.name,
-          email: user.email,
-          phone: user.phone,
-          address: user.address,
-          photograph: user.profile,
-          approvalStatus: "APPROVED",
-          createdOn: user.createdOn,
-          rating: 0,
-        }));
-        
-        console.log('📸 Photographer data created:', photographerData);
-        setPhotographers(photographerData);
+const formData = new URLSearchParams();
+formData.append("page", "1");
+formData.append("perPage", "100");
+formData.append("status", "APPROVED");
+
+const response = await api.post(
+  API.GET_PHOTOGRAPHERS_ALL,
+  formData.toString(),
+  {
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+    }
+  }
+);
+
+      if (response.data?.status) {
+        const photographersData = response.data.data || [];
+        console.log(`📸 Found ${photographersData.length} approved photographers`);
+        setPhotographers(photographersData);
       } else {
         setPhotographers([]);
       }
-      
     } catch (error) {
       console.error("📸 Error loading photographers:", error);
       Alert.alert("Error", "Failed to load photographers");
@@ -146,21 +117,21 @@ export default function PhotographerList({ navigation }) {
   };
 
   useEffect(() => {
-    loadPhotographers();
+    loadApprovedPhotographers();
   }, []);
 
   const onRefresh = () => {
     setRefreshing(true);
-    loadPhotographers();
+    loadApprovedPhotographers();
   };
 
-  // ✅ Show Photographer Details
+  // Show Photographer Details
   const showPhotographerDetails = (photographer) => {
     setSelectedPhotographer(photographer);
     setDetailsModalVisible(true);
   };
 
-  // ✅ Delete Photographer
+  // Delete Photographer (optional, you can add actual delete API if needed)
   const deletePhotographer = async (photographerId, photographerName) => {
     Alert.alert(
       "Delete Photographer",
@@ -173,15 +144,11 @@ export default function PhotographerList({ navigation }) {
           onPress: async () => {
             try {
               setActionLoading(true);
-              
-              console.log("🗑️ Deleting photographer:", photographerId);
-              
-              // Update local state
+              // Here you would call API.DELETE_PHOTOGRAPHER if you have that endpoint
+              // For now, just remove from local state
               setPhotographers(prev => prev.filter(p => p.id !== photographerId));
-              
               Alert.alert("Success", "Photographer deleted!");
               setDetailsModalVisible(false);
-              
             } catch (error) {
               console.error("❌ Delete error:", error);
               Alert.alert("Error", "Failed to delete");
@@ -194,13 +161,8 @@ export default function PhotographerList({ navigation }) {
     );
   };
 
-  const getStatusColor = (status) => {
-    return "#10B981"; // Always green for approved
-  };
-
-  const getStatusIcon = (status) => {
-    return "check-circle"; // Always check circle for approved
-  };
+  const getStatusColor = () => "#10B981"; // Always green for approved
+  const getStatusIcon = () => "check-circle";
 
   const renderPhotographerItem = ({ item }) => (
     <TouchableOpacity 
@@ -215,7 +177,7 @@ export default function PhotographerList({ navigation }) {
         <View style={styles.cardHeader}>
           <View style={styles.avatarContainer}>
             <PhotographerImage
-              imagePath={item.photograph}
+              imagePath={item.photograph || item.featuredImage}
               style={styles.avatar}
             />
           </View>
@@ -229,11 +191,9 @@ export default function PhotographerList({ navigation }) {
             </Text>
           </View>
 
-          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.approvalStatus) }]}>
-            <Icon name={getStatusIcon(item.approvalStatus)} size={12} color="#fff" />
-            <Text style={styles.statusText}>
-              APPROVED
-            </Text>
+          <View style={[styles.statusBadge, { backgroundColor: getStatusColor() }]}>
+            <Icon name={getStatusIcon()} size={12} color="#fff" />
+            <Text style={styles.statusText}>APPROVED</Text>
           </View>
         </View>
 
@@ -354,12 +314,7 @@ export default function PhotographerList({ navigation }) {
           renderItem={renderPhotographerItem}
           contentContainerStyle={styles.list}
           refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={["#2c5a73"]}
-              tintColor="#2c5a73"
-            />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#2c5a73"]} />
           }
           showsVerticalScrollIndicator={false}
         />
@@ -387,7 +342,7 @@ export default function PhotographerList({ navigation }) {
                 <View style={styles.modalProfileSection}>
                   <View style={styles.modalAvatarContainer}>
                     <PhotographerImage
-                      imagePath={selectedPhotographer.photograph}
+                      imagePath={selectedPhotographer.photograph || selectedPhotographer.featuredImage}
                       style={styles.modalAvatar}
                     />
                   </View>
@@ -422,9 +377,16 @@ export default function PhotographerList({ navigation }) {
                   <TouchableOpacity 
                     style={[styles.modalActionButton, styles.deleteModalButton]}
                     onPress={() => deletePhotographer(selectedPhotographer.id, selectedPhotographer.firmName)}
+                    disabled={actionLoading}
                   >
-                    <Icon name="delete" size={18} color="#fff" />
-                    <Text style={styles.modalActionText}>Delete</Text>
+                    {actionLoading ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <>
+                        <Icon name="delete" size={18} color="#fff" />
+                        <Text style={styles.modalActionText}>Delete</Text>
+                      </>
+                    )}
                   </TouchableOpacity>
                 </View>
               </ScrollView>
@@ -436,7 +398,9 @@ export default function PhotographerList({ navigation }) {
   );
 }
 
+// Styles remain the same as your original – keep them unchanged
 const styles = StyleSheet.create({
+  // ... (all your existing styles from your original file)
   container: {
     flex: 1,
     backgroundColor: "#f5f7fa",

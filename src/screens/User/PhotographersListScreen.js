@@ -12,24 +12,32 @@ import {
   Alert,
   Modal,
   ScrollView,
-  KeyboardAvoidingView,
-  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { BlurView } from "expo-blur";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import RazorpayCheckout from "react-native-razorpay";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AuthContext } from "../../context/AuthContext";
 import { LocationContext } from "../../context/LocationContext";
 import api from "../../api/apiClient";
 import { API } from "../../api/endpoints";
-import { BlurView } from "expo-blur";
-import DateTimePicker from "@react-native-community/datetimepicker";
+
+// ✅ Import like hook and component
+import { useLikes } from '../../context/LikesContext';
+import LikeButton from "../../components/LikeButton";
 
 const BASE_URL = "https://localguider.sinfode.com";
+const API_BASE = "https://localguider.sinfode.com/api";
 
 export default function PhotographersListScreen({ navigation, route }) {
   const { user } = useContext(AuthContext);
   const { location } = useContext(LocationContext);
   const { type } = route.params || { type: "all" };
+
+  // ✅ Like hook at top level
+  const { isLiked, toggleLike } = useLikes();
 
   const [photographers, setPhotographers] = useState([]);
   const [filteredPhotographers, setFilteredPhotographers] = useState([]);
@@ -37,14 +45,14 @@ export default function PhotographersListScreen({ navigation, route }) {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedPhotographer, setSelectedPhotographer] = useState(null);
+  const [expandedPhotographer, setExpandedPhotographer] = useState(null);
+  const [photographerServices, setPhotographerServices] = useState({});
   const [bookingModal, setBookingModal] = useState(false);
-  const [services, setServices] = useState([]);
   const [selectedService, setSelectedService] = useState(null);
   const [bookingLoading, setBookingLoading] = useState(false);
   const [filterModal, setFilterModal] = useState(false);
   const [sortBy, setSortBy] = useState("rating");
   const [minRating, setMinRating] = useState(0);
-  const [priceRange, setPriceRange] = useState({ min: 0, max: 50000 });
   const [date, setDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [timeSlot, setTimeSlot] = useState("");
@@ -52,6 +60,10 @@ export default function PhotographersListScreen({ navigation, route }) {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+
+  // Wallet-related state
+  const [userBalance, setUserBalance] = useState(0);
 
   // Photography specific time slots
   const timeSlots = [
@@ -67,15 +79,15 @@ export default function PhotographersListScreen({ navigation, route }) {
 
   useEffect(() => {
     fetchPhotographers();
-  }, [location, sortBy, minRating, priceRange]);
+  }, [location, sortBy, minRating]);
 
   useEffect(() => {
     if (searchQuery) {
       const filtered = photographers.filter(
-        (photographer) =>
-          photographer.firmName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          photographer.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          photographer.placeName?.toLowerCase().includes(searchQuery.toLowerCase())
+        (p) =>
+          p.firmName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          p.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          p.placeName?.toLowerCase().includes(searchQuery.toLowerCase())
       );
       setFilteredPhotographers(filtered);
     } else {
@@ -101,13 +113,11 @@ export default function PhotographersListScreen({ navigation, route }) {
 
       if (response.data?.status) {
         const newPhotographers = response.data.data || [];
-        
         if (append) {
           setPhotographers(prev => [...prev, ...newPhotographers]);
         } else {
           setPhotographers(newPhotographers);
         }
-        
         setHasMore(newPhotographers.length === 10);
         setPage(pageNum);
       }
@@ -130,111 +140,72 @@ export default function PhotographersListScreen({ navigation, route }) {
   const onRefresh = () => {
     setRefreshing(true);
     setPage(1);
+    setPhotographerServices({});
     fetchPhotographers(1, false);
   };
 
-  const handlePhotographerPress = (photographer) => {
-    setSelectedPhotographer(photographer);
-    fetchPhotographerServices(photographer.id);
+  const togglePhotographerExpand = (photographer) => {
+    if (!photographer) return;
+    if (expandedPhotographer === photographer.id) {
+      setExpandedPhotographer(null);
+    } else {
+      setExpandedPhotographer(photographer.id);
+      setSelectedPhotographer(photographer);
+      fetchPhotographerServices(photographer.id);
+    }
   };
 
   const fetchPhotographerServices = async (photographerId) => {
+    if (photographerServices[photographerId]) return;
+
     try {
-      const response = await api.post(API.GET_SERVICES, {
-        photographerId: photographerId,
+      const response = await api.post(API.GET_SERVICES, null, {
+        params: { photographerId: photographerId }
       });
-      
-      if (response.data?.status) {
-        setServices(response.data.data || []);
-        setBookingModal(true);
+
+      if (response.data?.status && Array.isArray(response.data.data)) {
+        const services = response.data.data.map(s => ({
+          id: s.id,
+          title: s.title,
+          description: s.description,
+          price: s.servicePrice,
+          duration: s.duration || "2 hours",
+          features: s.features || []
+        }));
+        setPhotographerServices(prev => ({ ...prev, [photographerId]: services }));
+      } else {
+        setPhotographerServices(prev => ({ ...prev, [photographerId]: [] }));
+        Alert.alert("Info", "This photographer has no active packages.");
       }
     } catch (error) {
       console.error("Error fetching services:", error);
-      Alert.alert("Error", "Failed to load services");
-    }
-  };
-
-  const handleBookNow = (service) => {
-    setSelectedService(service);
-  };
-
-  const handleConfirmBooking = async () => {
-    if (!selectedService) {
-      Alert.alert("Error", "Please select a service package");
-      return;
-    }
-
-    if (!timeSlot) {
-      Alert.alert("Error", "Please select a time slot");
-      return;
-    }
-
-    if (!user) {
-      Alert.alert("Error", "Please login to book");
-      navigation.navigate("Login");
-      return;
-    }
-
-    try {
-      setBookingLoading(true);
-
-      const bookingData = {
-        userId: user.id,
-        photographerId: selectedPhotographer.id,
-        serviceId: selectedService.id,
-        appointmentDate: date.toISOString().split('T')[0],
-        timeSlot: timeSlot,
-        amount: selectedService.servicePrice,
-        notes: notes,
-        status: "PENDING",
-      };
-
-      const response = await api.post(API.CREATE_APPOINTMENT, bookingData);
-
-      if (response.data?.status) {
+      if (error.response?.status === 401) {
         Alert.alert(
-          "Success",
-          "Booking request sent successfully! The photographer will respond shortly.",
+          "Authentication Required",
+          "Please log in to view service packages.",
           [
-            {
-              text: "OK",
-              onPress: () => {
-                setBookingModal(false);
-                setSelectedService(null);
-                setTimeSlot("");
-                setNotes("");
-                navigation.navigate("MyBookings");
-              },
-            },
+            { text: "Cancel", style: "cancel" },
+            { text: "Login", onPress: () => navigation.navigate("Login") }
           ]
         );
       } else {
-        Alert.alert("Error", response.data?.message || "Failed to book");
+        Alert.alert("Network Error", "Could not load services. Please check your internet connection.");
       }
-    } catch (error) {
-      console.error("Booking error:", error);
-      Alert.alert("Error", "Failed to create booking");
-    } finally {
-      setBookingLoading(false);
+      setPhotographerServices(prev => ({ ...prev, [photographerId]: [] }));
     }
   };
 
   const getImageUrl = (path) => {
     if (!path) return null;
     if (path.startsWith("http")) return path;
-    try {
-      const filename = path.split("/").pop();
-      return `${BASE_URL}/api/image/download/${filename}`;
-    } catch (error) {
-      return null;
-    }
+    const cleanPath = path.replace(/^\/+/, '');
+    return `${BASE_URL}/api/image/download/${cleanPath}`;
   };
 
   const renderRating = (rating) => {
     const stars = [];
     const fullStars = Math.floor(rating || 0);
     const hasHalf = (rating || 0) % 1 >= 0.5;
-
     for (let i = 0; i < 5; i++) {
       if (i < fullStars) {
         stars.push(<Ionicons key={i} name="star" size={14} color="#FFD700" />);
@@ -250,130 +221,366 @@ export default function PhotographersListScreen({ navigation, route }) {
   const applyFilters = () => {
     setFilterModal(false);
     setPage(1);
+    setPhotographers([]);
     fetchPhotographers(1, false);
   };
 
   const resetFilters = () => {
     setSortBy("rating");
     setMinRating(0);
-    setPriceRange({ min: 0, max: 50000 });
     setFilterModal(false);
     setPage(1);
+    setPhotographers([]);
     fetchPhotographers(1, false);
   };
 
   const onDateChange = (event, selectedDate) => {
     setShowDatePicker(false);
-    if (selectedDate) {
-      setDate(selectedDate);
+    if (selectedDate) setDate(selectedDate);
+  };
+
+  // Service item renderer (inside expanded card)
+  const renderServiceItem = (service, photographer) => (
+    <View key={service.id} style={styles.serviceItem}>
+      <View style={styles.serviceHeader}>
+        <View style={styles.serviceTitleContainer}>
+          <Text style={styles.serviceTitle}>{service.title}</Text>
+          <View style={styles.serviceBadge}>
+            <Text style={styles.serviceDuration}>{service.duration || "2 hours"}</Text>
+          </View>
+        </View>
+        <Text style={styles.servicePrice}>₹{service.price}</Text>
+      </View>
+      <Text style={styles.serviceDescription}>{service.description}</Text>
+      {service.features && service.features.length > 0 && (
+        <View style={styles.serviceFeatures}>
+          {service.features.map((feature, idx) => (
+            <View key={idx} style={styles.featureItem}>
+              <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+              <Text style={styles.featureText}>{feature}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+      <TouchableOpacity
+        style={styles.bookServiceBtn}
+        onPress={() => handleBookNow(photographer, service)}
+      >
+        <LinearGradient colors={["#2c5a73", "#1e3c4f"]} style={styles.bookServiceGradient}>
+          <Text style={styles.bookServiceText}>Book This Package</Text>
+        </LinearGradient>
+      </TouchableOpacity>
+    </View>
+  );
+
+  // Render each photographer card with LikeButton and expandable details
+  const renderPhotographerCard = ({ item }) => {
+    const isExpanded = expandedPhotographer === item.id;
+    const services = photographerServices[item.id] || [];
+
+    return (
+      <View style={styles.photographerCard}>
+        <LikeButton
+          isLiked={isLiked(item.id, 'photographer')}
+          onPress={() => toggleLike(item, 'photographer')}
+          size={18}
+          style={styles.cardLikeButton}
+        />
+
+        <TouchableOpacity onPress={() => togglePhotographerExpand(item)} activeOpacity={0.7}>
+          <View style={styles.cardHeader}>
+            {item.featuredImage ? (
+              <Image source={{ uri: getImageUrl(item.featuredImage) }} style={styles.photographerImage} />
+            ) : (
+              <View style={[styles.photographerImage, styles.imagePlaceholder]}>
+                <Text style={styles.placeholderText}>
+                  {item.firmName?.charAt(0) || item.name?.charAt(0) || "P"}
+                </Text>
+              </View>
+            )}
+            <View style={styles.photographerInfo}>
+              <Text style={styles.photographerName}>
+                {item.firmName || item.name || "Photographer"}
+              </Text>
+              <View style={styles.ratingContainer}>
+                {renderRating(item.rating)}
+                <Text style={styles.ratingText}>({item.rating?.toFixed(1) || "0.0"})</Text>
+              </View>
+              <View style={styles.locationContainer}>
+                <Ionicons name="location-outline" size={14} color="#64748b" />
+                <Text style={styles.locationText} numberOfLines={1}>
+                  {item.placeName || "Local Photographer"}
+                </Text>
+              </View>
+              <View style={styles.statsContainer}>
+                <View style={styles.statItem}>
+                  <Ionicons name="camera-outline" size={14} color="#64748b" />
+                  <Text style={styles.statText}>{item.totalBookings || 0} shoots</Text>
+                </View>
+                <View style={styles.statItem}>
+                  <Ionicons name="time-outline" size={14} color="#64748b" />
+                  <Text style={styles.statText}>Available today</Text>
+                </View>
+              </View>
+            </View>
+            <View style={styles.expandIcon}>
+              <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={20} color="#2c5a73" />
+            </View>
+          </View>
+        </TouchableOpacity>
+
+        {isExpanded && (
+          <View style={styles.expandedContent}>
+            {item.description && (
+              <View style={styles.aboutSection}>
+                <Text style={styles.sectionTitle}>About</Text>
+                <Text style={styles.aboutText}>{item.description}</Text>
+              </View>
+            )}
+            <View style={styles.languagesSection}>
+              <Text style={styles.sectionTitle}>Languages</Text>
+              <View style={styles.languagesList}>
+                {item.languages && item.languages.length > 0 ? (
+                  item.languages.map((lang, idx) => (
+                    <View key={idx} style={styles.languageTag}>
+                      <Text style={styles.languageText}>{lang}</Text>
+                    </View>
+                  ))
+                ) : (
+                  <>
+                    <View style={styles.languageTag}><Text style={styles.languageText}>Hindi</Text></View>
+                    <View style={styles.languageTag}><Text style={styles.languageText}>English</Text></View>
+                  </>
+                )}
+              </View>
+            </View>
+            <View style={styles.expertiseSection}>
+              <Text style={styles.sectionTitle}>Experience & Expertise</Text>
+              <View style={styles.experienceRow}>
+                <Ionicons name="briefcase-outline" size={16} color="#2c5a73" />
+                <Text style={styles.experienceText}>{item.experience || "5+"} years experience</Text>
+              </View>
+              <View style={styles.expertiseTags}>
+                {item.expertise ? (
+                  item.expertise.split(',').map((exp, idx) => (
+                    <View key={idx} style={styles.expertiseTag}>
+                      <Text style={styles.expertiseText}>{exp.trim()}</Text>
+                    </View>
+                  ))
+                ) : (
+                  <>
+                    <View style={styles.expertiseTag}><Text style={styles.expertiseText}>Wedding</Text></View>
+                    <View style={styles.expertiseTag}><Text style={styles.expertiseText}>Portrait</Text></View>
+                    <View style={styles.expertiseTag}><Text style={styles.expertiseText}>Event</Text></View>
+                  </>
+                )}
+              </View>
+            </View>
+            <View style={styles.servicesSection}>
+              <Text style={styles.sectionTitle}>Photography Packages</Text>
+              {services.length > 0 ? (
+                <View style={styles.servicesList}>
+                  {services.map(service => renderServiceItem(service, item))}
+                </View>
+              ) : (
+                <View style={styles.loadingServices}>
+                  <Text style={styles.noServicesText}>No packages available for this photographer.</Text>
+                </View>
+              )}
+            </View>
+            {item.reviewCount > 0 && (
+              <TouchableOpacity
+                style={styles.reviewsLink}
+                onPress={() => navigation.navigate("PhotographerReviews", { photographerId: item.id })}
+              >
+                <Text style={styles.reviewsLinkText}>View {item.reviewCount} reviews →</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  // ----- Wallet & Payment Functions (identical to GuiderListScreen) -----
+
+  const fetchUserBalance = async () => {
+    if (!user) return;
+    try {
+      const token = await AsyncStorage.getItem("token");
+      const userId = await AsyncStorage.getItem("userId");
+      if (!token || !userId) return;
+
+      const formData = new FormData();
+      formData.append("userId", userId);
+
+      const response = await fetch(`${API_BASE}/user/get_profile`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+
+      const json = await response.json();
+      if (json?.status && json?.data) {
+        setUserBalance(json.data.balance || 0);
+      }
+    } catch (error) {
+      console.error("Error fetching balance:", error);
     }
   };
 
-  const renderPhotographerCard = ({ item }) => (
-    <TouchableOpacity
-      style={styles.photographerCard}
-      onPress={() => handlePhotographerPress(item)}
-      activeOpacity={0.7}
-    >
-      <View style={styles.cardHeader}>
-        {item.featuredImage ? (
-          <Image
-            source={{ uri: getImageUrl(item.featuredImage) }}
-            style={styles.photographerImage}
-          />
-        ) : (
-          <View style={[styles.photographerImage, styles.imagePlaceholder]}>
-            <Text style={styles.placeholderText}>
-              {item.firmName?.charAt(0) || item.name?.charAt(0) || "P"}
-            </Text>
-          </View>
-        )}
+  const performBooking = async () => {
+    try {
+      setBookingLoading(true);
+      const year = date.getFullYear();
+      const month = (date.getMonth() + 1).toString().padStart(2, "0");
+      const day = date.getDate().toString().padStart(2, "0");
+      const formattedDateTime = `${year}-${month}-${day} ${timeSlot}`;
+      const price = parseFloat(selectedService.price) || 0;
 
-        <View style={styles.photographerInfo}>
-          <Text style={styles.photographerName}>
-            {item.firmName || item.name || "Photographer"}
-          </Text>
-          <View style={styles.ratingContainer}>
-            {renderRating(item.rating)}
-            <Text style={styles.ratingText}>({item.rating?.toFixed(1) || "0.0"})</Text>
-          </View>
-          <View style={styles.locationContainer}>
-            <Ionicons name="location-outline" size={14} color="#64748b" />
-            <Text style={styles.locationText} numberOfLines={1}>
-              {item.placeName || "Local Photographer"}
-            </Text>
-          </View>
-        </View>
-      </View>
+      const bookingPayload = {
+        userId: user.id,
+        photographerId: selectedPhotographer.id,
+        serviceId: selectedService.id,
+        dateTime: formattedDateTime,
+        appointmentCharge: 0,
+        serviceCost: price,
+        totalPayment: price,
+        transactionId: `txn_${Date.now()}`,
+        note: notes || "",
+      };
 
-      <View style={styles.cardFooter}>
-        <View style={styles.statsContainer}>
-          <View style={styles.statItem}>
-            <Ionicons name="camera-outline" size={14} color="#64748b" />
-            <Text style={styles.statText}>{item.totalBookings || 0} shoots</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Ionicons name="time-outline" size={14} color="#64748b" />
-            <Text style={styles.statText}>Available today</Text>
-          </View>
-        </View>
+      const response = await api.post(API.CREATE_APPOINTMENT, bookingPayload);
+      if (response.data?.status) {
+        Alert.alert(
+          "Success",
+          "Booking request sent successfully!",
+          [
+            {
+              text: "OK",
+              onPress: () => {
+                setBookingModal(false);
+                setSelectedService(null);
+                setTimeSlot("");
+                setNotes("");
+                setSelectedPhotographer(null);
+                navigation.navigate("MyBookings");
+              },
+            },
+          ]
+        );
+      } else {
+        Alert.alert("Error", response.data?.message || "Booking failed");
+      }
+    } catch (error) {
+      console.log("❌ Booking error:", error.response?.data || error.message);
+      Alert.alert("Error", error.response?.data?.message || "Failed to create booking. Please try again.");
+    } finally {
+      setBookingLoading(false);
+    }
+  };
 
-        {item.verified && (
-          <View style={styles.verifiedBadge}>
-            <Ionicons name="checkmark-circle" size={14} color="#10B981" />
-            <Text style={styles.verifiedText}>Verified</Text>
-          </View>
-        )}
-      </View>
+  const handlePayWithWallet = async () => {
+    const total = parseFloat(selectedService.price) || 0;
+    if (userBalance < total) {
+      Alert.alert("Insufficient Balance", "Please use Razorpay to pay directly.");
+      return;
+    }
+    await performBooking();
+    fetchUserBalance();
+  };
 
-      <LinearGradient
-        colors={["#56829a", "#2c5a73"]}
-        style={styles.bookBadge}
-      >
-        <Text style={styles.bookBadgeText}>Book Now</Text>
-      </LinearGradient>
-    </TouchableOpacity>
-  );
+  const handleRazorpayForBooking = async () => {
+    if (!selectedService || !timeSlot) {
+      Alert.alert("Error", "Please select a service and time slot");
+      return;
+    }
 
-  const renderServiceCard = ({ item }) => (
-    <TouchableOpacity
-      style={[
-        styles.serviceCard,
-        selectedService?.id === item.id && styles.selectedServiceCard,
-      ]}
-      onPress={() => setSelectedService(item)}
-    >
-      {item.image && (
-        <Image
-          source={{ uri: getImageUrl(item.image) }}
-          style={styles.serviceImage}
-        />
-      )}
-      <View style={styles.serviceInfo}>
-        <Text style={styles.serviceTitle}>{item.title}</Text>
-        <Text style={styles.serviceDesc} numberOfLines={2}>
-          {item.description}
-        </Text>
-        <View style={styles.serviceFooter}>
-          <Text style={styles.servicePrice}>₹{item.servicePrice}</Text>
-          <Text style={styles.serviceDuration}>{item.duration || "2 hours"}</Text>
-        </View>
-      </View>
-      {selectedService?.id === item.id && (
-        <View style={styles.selectedCheck}>
-          <Ionicons name="checkmark-circle" size={24} color="#10B981" />
-        </View>
-      )}
-    </TouchableOpacity>
-  );
+    const amount = parseFloat(selectedService.price) || 0;
+    if (amount <= 0) {
+      Alert.alert("Error", "Invalid service amount");
+      return;
+    }
+
+    try {
+      setBookingLoading(true);
+
+      const token = await AsyncStorage.getItem("token");
+      const userId = await AsyncStorage.getItem("userId");
+      if (!token || !userId) {
+        Alert.alert("Error", "You are not logged in");
+        return;
+      }
+
+      const keyRes = await fetch(`${API_BASE}/settings/get`, { method: "POST" });
+      const keyJson = await keyRes.json();
+      if (!keyJson?.data?.razorpayAPIKey) throw new Error("Failed to fetch Razorpay key");
+      const razorpayKey = keyJson.data.razorpayAPIKey;
+
+      const formData = new FormData();
+      formData.append("userId", userId);
+      formData.append("amount", amount.toString());
+
+      const transRes = await fetch(`${API_BASE}/transaction/create`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const transJson = await transRes.json();
+      if (!transJson.data) throw new Error("Transaction creation failed");
+      const orderId = transJson.data.paymentToken;
+
+      const options = {
+        description: `Booking: ${selectedService.title}`,
+        currency: "INR",
+        key: razorpayKey,
+        amount: amount * 100,
+        name: "Local Guider",
+        order_id: orderId,
+        method: { card: true, upi: true, netbanking: true, wallet: true },
+        prefill: { contact: user?.phone || "9999999999" },
+        theme: { color: "#3399cc" },
+      };
+
+      await RazorpayCheckout.open(options);
+      console.log("Payment success");
+
+      const updateForm = new FormData();
+      updateForm.append("paymentToken", orderId);
+      updateForm.append("paymentStatus", "success");
+
+      await fetch(`${API_BASE}/transaction/update`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: updateForm,
+      });
+
+      Alert.alert("Success", "Payment successful! Now confirming your booking...");
+      await fetchUserBalance();
+      await performBooking();
+    } catch (error) {
+      console.log("Payment error", error);
+      Alert.alert("Payment Failed", error.message || "Could not complete payment");
+    } finally {
+      setBookingLoading(false);
+    }
+  };
+
+  const handleBookNow = (photographer, service) => {
+    if (!user) {
+      setShowLoginPrompt(true);
+      return;
+    }
+    setSelectedPhotographer(photographer);
+    setSelectedService(service);
+    setBookingModal(true);
+    fetchUserBalance();
+  };
+
+  // ----- Modal Rendering Functions -----
 
   const renderFilterModal = () => (
-    <Modal
-      visible={filterModal}
-      transparent={true}
-      animationType="slide"
-      onRequestClose={() => setFilterModal(false)}
-    >
+    <Modal visible={filterModal} transparent animationType="slide" onRequestClose={() => setFilterModal(false)}>
       <BlurView intensity={20} style={StyleSheet.absoluteFill} />
       <View style={styles.modalContainer}>
         <View style={styles.modalContent}>
@@ -383,9 +590,7 @@ export default function PhotographersListScreen({ navigation, route }) {
               <Ionicons name="close" size={24} color="#64748b" />
             </TouchableOpacity>
           </View>
-
           <ScrollView showsVerticalScrollIndicator={false}>
-            {/* Sort By */}
             <Text style={styles.filterLabel}>Sort By</Text>
             <View style={styles.sortOptions}>
               {[
@@ -396,44 +601,27 @@ export default function PhotographersListScreen({ navigation, route }) {
               ].map((option) => (
                 <TouchableOpacity
                   key={option.value}
-                  style={[
-                    styles.sortOption,
-                    sortBy === option.value && styles.sortOptionSelected,
-                  ]}
+                  style={[styles.sortOption, sortBy === option.value && styles.sortOptionSelected]}
                   onPress={() => setSortBy(option.value)}
                 >
-                  <Text
-                    style={[
-                      styles.sortOptionText,
-                      sortBy === option.value && styles.sortOptionTextSelected,
-                    ]}
-                  >
+                  <Text style={[styles.sortOptionText, sortBy === option.value && styles.sortOptionTextSelected]}>
                     {option.label}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
 
-            {/* Minimum Rating */}
             <Text style={styles.filterLabel}>Minimum Rating</Text>
             <View style={styles.ratingOptions}>
               {[4, 3, 2, 1].map((rating) => (
                 <TouchableOpacity
                   key={rating}
-                  style={[
-                    styles.ratingOption,
-                    minRating === rating && styles.ratingOptionSelected,
-                  ]}
+                  style={[styles.ratingOption, minRating === rating && styles.ratingOptionSelected]}
                   onPress={() => setMinRating(minRating === rating ? 0 : rating)}
                 >
                   <View style={{ flexDirection: "row", alignItems: "center" }}>
                     <Ionicons name="star" size={14} color="#FFD700" />
-                    <Text
-                      style={[
-                        styles.ratingOptionText,
-                        minRating === rating && styles.ratingOptionTextSelected,
-                      ]}
-                    >
+                    <Text style={[styles.ratingOptionText, minRating === rating && styles.ratingOptionTextSelected]}>
                       {rating}+
                     </Text>
                   </View>
@@ -441,16 +629,12 @@ export default function PhotographersListScreen({ navigation, route }) {
               ))}
             </View>
 
-            {/* Action Buttons */}
             <View style={styles.filterActions}>
               <TouchableOpacity style={styles.resetBtn} onPress={resetFilters}>
                 <Text style={styles.resetBtnText}>Reset</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.applyBtn} onPress={applyFilters}>
-                <LinearGradient
-                 colors={["#56829a", "#2c5a73"]}
-                  style={styles.applyGradient}
-                >
+                <LinearGradient colors={["#2c5a73", "#1e3c4f"]} style={styles.applyGradient}>
                   <Text style={styles.applyBtnText}>Apply Filters</Text>
                 </LinearGradient>
               </TouchableOpacity>
@@ -464,43 +648,41 @@ export default function PhotographersListScreen({ navigation, route }) {
   const renderBookingModal = () => (
     <Modal
       visible={bookingModal}
-      transparent={true}
+      transparent
       animationType="slide"
       onRequestClose={() => {
         setBookingModal(false);
         setSelectedService(null);
+        setTimeSlot("");
+        setNotes("");
       }}
     >
       <BlurView intensity={20} style={StyleSheet.absoluteFill} />
       <View style={styles.modalContainer}>
         <View style={[styles.modalContent, styles.bookingModalContent]}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Book Photography Session</Text>
+            <Text style={styles.modalTitle}>Confirm Booking</Text>
             <TouchableOpacity
               onPress={() => {
                 setBookingModal(false);
                 setSelectedService(null);
+                setTimeSlot("");
+                setNotes("");
               }}
             >
               <Ionicons name="close" size={24} color="#64748b" />
             </TouchableOpacity>
           </View>
 
-          {selectedPhotographer && (
+          {selectedPhotographer && selectedService && (
             <ScrollView showsVerticalScrollIndicator={false}>
-              {/* Photographer Info */}
               <View style={styles.selectedPhotographerInfo}>
                 {selectedPhotographer.featuredImage ? (
-                  <Image
-                    source={{ uri: getImageUrl(selectedPhotographer.featuredImage) }}
-                    style={styles.selectedPhotographerImage}
-                  />
+                  <Image source={{ uri: getImageUrl(selectedPhotographer.featuredImage) }} style={styles.selectedPhotographerImage} />
                 ) : (
                   <View style={[styles.selectedPhotographerImage, styles.imagePlaceholder]}>
                     <Text style={styles.placeholderText}>
-                      {selectedPhotographer.firmName?.charAt(0) ||
-                        selectedPhotographer.name?.charAt(0) ||
-                        "P"}
+                      {selectedPhotographer.firmName?.charAt(0) || selectedPhotographer.name?.charAt(0) || "P"}
                     </Text>
                   </View>
                 )}
@@ -510,36 +692,22 @@ export default function PhotographersListScreen({ navigation, route }) {
                   </Text>
                   <View style={styles.ratingContainer}>
                     {renderRating(selectedPhotographer.rating)}
-                    <Text style={styles.ratingText}>
-                      ({selectedPhotographer.rating?.toFixed(1) || "0.0"})
-                    </Text>
+                    <Text style={styles.ratingText}>({selectedPhotographer.rating?.toFixed(1) || "0.0"})</Text>
                   </View>
                 </View>
               </View>
 
-              {/* Select Service */}
-              <Text style={styles.sectionSubtitle}>Select Photography Package</Text>
-              <FlatList
-                data={services}
-                keyExtractor={(item) => item.id?.toString()}
-                renderItem={renderServiceCard}
-                scrollEnabled={false}
-                ListEmptyComponent={
-                  <View style={styles.emptyServices}>
-                    <Ionicons name="cube-outline" size={40} color="#94a3b8" />
-                    <Text style={styles.emptyServicesText}>
-                      No packages available for this photographer
-                    </Text>
-                  </View>
-                }
-              />
+              <View style={styles.selectedServiceSummary}>
+                <Text style={styles.summaryTitle}>Selected Package</Text>
+                <View style={styles.summaryContent}>
+                  <Text style={styles.summaryServiceName}>{selectedService.title}</Text>
+                  <Text style={styles.summaryServicePrice}>₹{selectedService.price}</Text>
+                  <Text style={styles.summaryServiceDuration}>{selectedService.duration || "2 hours"}</Text>
+                </View>
+              </View>
 
-              {/* Date Selection */}
               <Text style={styles.sectionSubtitle}>Select Date</Text>
-              <TouchableOpacity
-                style={styles.dateSelector}
-                onPress={() => setShowDatePicker(true)}
-              >
+              <TouchableOpacity style={styles.dateSelector} onPress={() => setShowDatePicker(true)}>
                 <Ionicons name="calendar-outline" size={20} color="#2c5a73" />
                 <Text style={styles.dateText}>
                   {date.toLocaleDateString("en-IN", {
@@ -561,31 +729,21 @@ export default function PhotographersListScreen({ navigation, route }) {
                 />
               )}
 
-              {/* Time Slot */}
               <Text style={styles.sectionSubtitle}>Select Time Slot</Text>
               <View style={styles.timeSlotsGrid}>
                 {timeSlots.map((slot) => (
                   <TouchableOpacity
                     key={slot}
-                    style={[
-                      styles.timeSlot,
-                      timeSlot === slot && styles.timeSlotSelected,
-                    ]}
+                    style={[styles.timeSlot, timeSlot === slot && styles.timeSlotSelected]}
                     onPress={() => setTimeSlot(slot)}
                   >
-                    <Text
-                      style={[
-                        styles.timeSlotText,
-                        timeSlot === slot && styles.timeSlotTextSelected,
-                      ]}
-                    >
+                    <Text style={[styles.timeSlotText, timeSlot === slot && styles.timeSlotTextSelected]}>
                       {slot}
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
 
-              {/* Notes */}
               <Text style={styles.sectionSubtitle}>Additional Notes</Text>
               <TextInput
                 style={[styles.input, styles.notesInput]}
@@ -598,55 +756,70 @@ export default function PhotographersListScreen({ navigation, route }) {
                 textAlignVertical="top"
               />
 
-              {/* Price Summary */}
-              {selectedService && (
-                <View style={styles.priceSummary}>
-                  <Text style={styles.priceSummaryTitle}>Price Summary</Text>
-                  <View style={styles.priceRow}>
-                    <Text style={styles.priceLabel}>Package Price</Text>
-                    <Text style={styles.priceValue}>₹{selectedService.servicePrice}</Text>
-                  </View>
-                  <View style={styles.priceRow}>
-                    <Text style={styles.priceLabel}>GST (5%)</Text>
-                    <Text style={styles.priceValue}>
-                      ₹{(selectedService.servicePrice * 0.05).toFixed(2)}
-                    </Text>
-                  </View>
-                  <View style={styles.totalRow}>
-                    <Text style={styles.totalLabel}>Total Amount</Text>
-                    <Text style={styles.totalValue}>
-                      ₹{(selectedService.servicePrice * 1.05).toFixed(2)}
-                    </Text>
-                  </View>
+              <View style={styles.priceSummary}>
+                <Text style={styles.priceSummaryTitle}>Price Summary</Text>
+                <View style={styles.priceRow}>
+                  <Text style={styles.priceLabel}>Service Charge</Text>
+                  <Text style={styles.priceValue}>₹{(parseFloat(selectedService.price) || 0).toFixed(2)}</Text>
                 </View>
-              )}
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>Total Amount</Text>
+                  <Text style={styles.totalValue}>₹{(parseFloat(selectedService.price) || 0).toFixed(2)}</Text>
+                </View>
+              </View>
 
-              {/* Action Buttons */}
+              {/* Payment Options */}
+              <View style={styles.paymentOptions}>
+                {userBalance >= (parseFloat(selectedService.price) || 0) ? (
+                  <TouchableOpacity
+                    style={[styles.payButton, styles.walletButton]}
+                    onPress={handlePayWithWallet}
+                    disabled={bookingLoading}
+                  >
+                    <LinearGradient colors={["#2c5a73", "#1e3c4f"]} style={styles.payButtonGradient}>
+                      {bookingLoading ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <Text style={styles.payButtonText}>
+                          Pay via Wallet (₹{(parseFloat(selectedService.price) || 0).toFixed(2)})
+                        </Text>
+                      )}
+                    </LinearGradient>
+                  </TouchableOpacity>
+                ) : (
+                  <View style={styles.insufficientWallet}>
+                    <Text style={styles.insufficientText}>Insufficient wallet balance</Text>
+                  </View>
+                )}
+
+                <TouchableOpacity
+                  style={[styles.payButton, styles.razorpayButton]}
+                  onPress={handleRazorpayForBooking}
+                  disabled={bookingLoading}
+                >
+                  <LinearGradient colors={["#ff6b6b", "#ee5253"]} style={styles.payButtonGradient}>
+                    {bookingLoading ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.payButtonText}>
+                        Pay via Razorpay (₹{(parseFloat(selectedService.price) || 0).toFixed(2)})
+                      </Text>
+                    )}
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+
               <View style={styles.modalActions}>
                 <TouchableOpacity
                   style={styles.cancelBtn}
                   onPress={() => {
                     setBookingModal(false);
                     setSelectedService(null);
+                    setTimeSlot("");
+                    setNotes("");
                   }}
                 >
                   <Text style={styles.cancelBtnText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.confirmBtn, bookingLoading && styles.buttonDisabled]}
-                  onPress={handleConfirmBooking}
-                  disabled={bookingLoading || !selectedService}
-                >
-                  <LinearGradient
-                    colors={["#56829a", "#2c5a73"]}
-                    style={styles.confirmGradient}
-                  >
-                    {bookingLoading ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <Text style={styles.confirmBtnText}>Confirm Booking</Text>
-                    )}
-                  </LinearGradient>
                 </TouchableOpacity>
               </View>
             </ScrollView>
@@ -656,15 +829,39 @@ export default function PhotographersListScreen({ navigation, route }) {
     </Modal>
   );
 
+  const renderLoginPromptModal = () => (
+    <Modal visible={showLoginPrompt} transparent animationType="fade" onRequestClose={() => setShowLoginPrompt(false)}>
+      <BlurView intensity={20} style={StyleSheet.absoluteFill} />
+      <View style={styles.modalContainer}>
+        <View style={styles.promptContent}>
+          <Ionicons name="log-in-outline" size={50} color="#2c5a73" />
+          <Text style={styles.promptTitle}>Login Required</Text>
+          <Text style={styles.promptText}>Please login or create an account to book a photographer.</Text>
+          <View style={styles.promptButtons}>
+            <TouchableOpacity style={styles.promptCancelBtn} onPress={() => setShowLoginPrompt(false)}>
+              <Text style={styles.promptCancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.promptLoginBtn}
+              onPress={() => {
+                setShowLoginPrompt(false);
+                navigation.navigate("Login");
+              }}
+            >
+              <LinearGradient colors={["#2c5a73", "#1e3c4f"]} style={styles.promptLoginGradient}>
+                <Text style={styles.promptLoginText}>Login</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  // ----- Main Render -----
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <LinearGradient
-        colors={["#1e3c4f", "#2c5a73", "#3b7a8f"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.header}
-      >
+      <LinearGradient colors={["#1e3c4f", "#2c5a73", "#3b7a8f"]} style={styles.header}>
         <View style={styles.headerTop}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
             <Ionicons name="arrow-back" size={24} color="#fff" />
@@ -675,7 +872,6 @@ export default function PhotographersListScreen({ navigation, route }) {
           </TouchableOpacity>
         </View>
 
-        {/* Search Bar */}
         <View style={styles.searchContainer}>
           <Ionicons name="search-outline" size={20} color="#94a3b8" />
           <TextInput
@@ -685,20 +881,14 @@ export default function PhotographersListScreen({ navigation, route }) {
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
-          {searchQuery ? (
+          {searchQuery && (
             <TouchableOpacity onPress={() => setSearchQuery("")}>
               <Ionicons name="close-circle" size={18} color="#94a3b8" />
             </TouchableOpacity>
-          ) : null}
+          )}
         </View>
-
-        {/* Results Count
-        <Text style={styles.resultsCount}>
-          {filteredPhotographers.length} photographers found
-        </Text> */}
       </LinearGradient>
 
-      {/* Photographers List */}
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#2c5a73" />
@@ -711,9 +901,7 @@ export default function PhotographersListScreen({ navigation, route }) {
           renderItem={renderPhotographerCard}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#2c5a73"]} tintColor="#2c5a73" />}
           onEndReached={loadMore}
           onEndReachedThreshold={0.5}
           ListFooterComponent={
@@ -727,9 +915,7 @@ export default function PhotographersListScreen({ navigation, route }) {
             <View style={styles.emptyContainer}>
               <Ionicons name="camera-outline" size={64} color="#cbd5e1" />
               <Text style={styles.emptyTitle}>No Photographers Found</Text>
-              <Text style={styles.emptyText}>
-                Try adjusting your filters or search query
-              </Text>
+              <Text style={styles.emptyText}>Try adjusting your filters or search query</Text>
               <TouchableOpacity style={styles.resetFiltersBtn} onPress={resetFilters}>
                 <Text style={styles.resetFiltersText}>Reset Filters</Text>
               </TouchableOpacity>
@@ -738,565 +924,160 @@ export default function PhotographersListScreen({ navigation, route }) {
         />
       )}
 
-      {/* Modals */}
       {renderFilterModal()}
       {renderBookingModal()}
+      {renderLoginPromptModal()}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f8fafc",
-  },
-  header: {
-    paddingTop: 46,
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-  },
-  headerTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  backBtn: {
-    padding: 4,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#fff",
-  },
-  filterBtn: {
-    padding: 4,
-  },
-  searchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 12,
-  },
-  searchInput: {
-    flex: 1,
-    marginLeft: 8,
-    fontSize: 14,
-    color: "#1e293b",
-    padding: 0,
-  },
-  resultsCount: {
-    color: "#e2e8f0",
-    fontSize: 12,
-    fontWeight: "500",
-  },
-  listContent: {
-    padding: 16,
-    paddingTop: 8,
-  },
-  photographerCard: {
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    position: "relative",
-  },
-  cardHeader: {
-    flexDirection: "row",
-    marginBottom: 12,
-  },
-  photographerImage: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    marginRight: 12,
-  },
-  imagePlaceholder: {
-    backgroundColor: "#2c5a73",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  placeholderText: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#fff",
-  },
-  photographerInfo: {
-    flex: 1,
-  },
-  photographerName: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#1e293b",
-    marginBottom: 4,
-  },
-  ratingContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 4,
-  },
-  ratingText: {
-    fontSize: 12,
-    color: "#64748b",
-    marginLeft: 4,
-  },
-  locationContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  locationText: {
-    fontSize: 12,
-    color: "#64748b",
-    marginLeft: 4,
-  },
-  cardFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  statsContainer: {
-    flexDirection: "row",
-  },
-  statItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginRight: 16,
-  },
-  statText: {
-    fontSize: 11,
-    color: "#64748b",
-    marginLeft: 4,
-  },
-  verifiedBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#D1FAE5",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 12,
-  },
-  verifiedText: {
-    fontSize: 10,
-    color: "#10B981",
-    marginLeft: 2,
-    fontWeight: "600",
-  },
-  bookBadge: {
-    position: "absolute",
-    top: 12,
-    right: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  bookBadgeText: {
-    color: "#fff",
-    fontSize: 10,
-    fontWeight: "600",
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: "#64748b",
-  },
-  footerLoader: {
-    paddingVertical: 20,
-    alignItems: "center",
-  },
-  emptyContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 60,
-    paddingHorizontal: 32,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#1e293b",
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: "#64748b",
-    textAlign: "center",
-    marginBottom: 20,
-  },
-  resetFiltersBtn: {
-    backgroundColor: "#2c5a73",
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
-  },
-  resetFiltersText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-
-  // Modal Styles
-  modalContainer: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  modalContent: {
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    maxHeight: "90%",
-  },
-  bookingModalContent: {
-    maxHeight: "95%",
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#1e293b",
-  },
-  filterLabel: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#1e293b",
-    marginTop: 16,
-    marginBottom: 12,
-  },
-  sortOptions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-  },
-  sortOption: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: "#f1f5f9",
-    borderRadius: 20,
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  sortOptionSelected: {
-    backgroundColor: "#2c5a73",
-  },
-  sortOptionText: {
-    fontSize: 13,
-    color: "#64748b",
-    fontWeight: "500",
-  },
-  sortOptionTextSelected: {
-    color: "#fff",
-  },
-  ratingOptions: {
-    flexDirection: "row",
-    marginBottom: 20,
-  },
-  ratingOption: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: "#f1f5f9",
-    borderRadius: 20,
-    marginRight: 8,
-  },
-  ratingOptionSelected: {
-    backgroundColor: "#2c5a73",
-  },
-  ratingOptionText: {
-    fontSize: 13,
-    color: "#64748b",
-    marginLeft: 4,
-    fontWeight: "500",
-  },
-  ratingOptionTextSelected: {
-    color: "#fff",
-  },
-  filterActions: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 24,
-    marginBottom: 20,
-  },
-  resetBtn: {
-    flex: 1,
-    paddingVertical: 14,
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  resetBtnText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#64748b",
-  },
-  applyBtn: {
-    flex: 1,
-    marginLeft: 8,
-    borderRadius: 12,
-    overflow: "hidden",
-  },
-  applyGradient: {
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  applyBtnText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#fff",
-  },
-
-  // Booking Modal Styles
-  selectedPhotographerInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#f8fafc",
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 20,
-  },
-  selectedPhotographerImage: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-  },
-  selectedPhotographerName: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#1e293b",
-    marginBottom: 2,
-  },
-  sectionSubtitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#1e293b",
-    marginBottom: 12,
-    marginTop: 8,
-  },
-  serviceCard: {
-    flexDirection: "row",
-    backgroundColor: "#f8fafc",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
-    borderWidth: 2,
-    borderColor: "transparent",
-  },
-  selectedServiceCard: {
-    borderColor: "#2c5a73",
-    backgroundColor: "#f3e8ff",
-  },
-  serviceImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 8,
-    marginRight: 12,
-  },
-  serviceInfo: {
-    flex: 1,
-  },
-  serviceTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#1e293b",
-    marginBottom: 4,
-  },
-  serviceDesc: {
-    fontSize: 12,
-    color: "#64748b",
-    lineHeight: 18,
-    marginBottom: 4,
-  },
-  serviceFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  servicePrice: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#2c5a73",
-  },
-  serviceDuration: {
-    fontSize: 11,
-    color: "#64748b",
-  },
-  selectedCheck: {
-    position: "absolute",
+  container: { flex: 1, backgroundColor: "#f8fafc" },
+  header: { paddingTop: 46, paddingHorizontal: 16, paddingBottom: 16, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
+  headerTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
+  backBtn: { padding: 4 },
+  headerTitle: { fontSize: 18, fontWeight: "700", color: "#fff" },
+  filterBtn: { padding: 4 },
+  searchContainer: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 12 },
+  searchInput: { flex: 1, marginLeft: 8, fontSize: 14, color: "#1e293b", padding: 0 },
+  listContent: { padding: 16, paddingTop: 8 },
+  photographerCard: { backgroundColor: "#fff", borderRadius: 16, marginBottom: 12, elevation: 2, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, overflow: "hidden", position: "relative" },
+  cardHeader: { flexDirection: "row", padding: 16 },
+  photographerImage: { width: 70, height: 70, borderRadius: 35, marginRight: 12 },
+  imagePlaceholder: { backgroundColor: "#2c5a73", justifyContent: "center", alignItems: "center" },
+  placeholderText: { fontSize: 24, fontWeight: "bold", color: "#fff" },
+  photographerInfo: { flex: 1 },
+  photographerName: { fontSize: 16, fontWeight: "700", color: "#1e293b", marginBottom: 4 },
+  ratingContainer: { flexDirection: "row", alignItems: "center", marginBottom: 4 },
+  ratingText: { fontSize: 12, color: "#64748b", marginLeft: 4 },
+  locationContainer: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
+  locationText: { fontSize: 12, color: "#64748b", marginLeft: 4 },
+  statsContainer: { flexDirection: "row" },
+  statItem: { flexDirection: "row", alignItems: "center", marginRight: 16 },
+  statText: { fontSize: 11, color: "#64748b", marginLeft: 4 },
+  expandIcon: { justifyContent: "center", marginLeft: 8 },
+  expandedContent: { padding: 16, paddingTop: 0, borderTopWidth: 1, borderTopColor: "#e2e8f0" },
+  sectionTitle: { fontSize: 14, fontWeight: "600", color: "#1e293b", marginBottom: 8, marginTop: 4 },
+  aboutSection: { marginBottom: 12 },
+  aboutText: { fontSize: 13, color: "#475569", lineHeight: 18 },
+  languagesSection: { marginBottom: 12 },
+  languagesList: { flexDirection: "row", flexWrap: "wrap" },
+  languageTag: { backgroundColor: "#e2e8f0", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginRight: 8, marginBottom: 4 },
+  languageText: { fontSize: 11, color: "#1e293b", fontWeight: "500" },
+  expertiseSection: { marginBottom: 12 },
+  experienceRow: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
+  experienceText: { fontSize: 13, color: "#475569", marginLeft: 6 },
+  expertiseTags: { flexDirection: "row", flexWrap: "wrap" },
+  expertiseTag: { backgroundColor: "#dbeafe", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginRight: 8, marginBottom: 4 },
+  expertiseText: { fontSize: 11, color: "#1e40af", fontWeight: "500" },
+  servicesSection: { marginBottom: 12 },
+  servicesList: { marginTop: 8 },
+  serviceItem: { backgroundColor: "#f8fafc", borderRadius: 12, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: "#e2e8f0" },
+  serviceHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
+  serviceTitleContainer: { flex: 1, flexDirection: "row", alignItems: "center" },
+  serviceTitle: { fontSize: 14, fontWeight: "600", color: "#1e293b" },
+  serviceBadge: { backgroundColor: "#e2e8f0", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8, marginLeft: 8 },
+  serviceDuration: { fontSize: 10, color: "#475569", fontWeight: "500" },
+  servicePrice: { fontSize: 16, fontWeight: "700", color: "#2c5a73" },
+  serviceDescription: { fontSize: 12, color: "#64748b", marginBottom: 8, lineHeight: 16 },
+  serviceFeatures: { marginBottom: 10 },
+  featureItem: { flexDirection: "row", alignItems: "center", marginBottom: 4 },
+  featureText: { fontSize: 11, color: "#475569", marginLeft: 6 },
+  bookServiceBtn: { borderRadius: 8, overflow: "hidden", marginTop: 4 },
+  bookServiceGradient: { paddingVertical: 8, alignItems: "center" },
+  bookServiceText: { color: "#fff", fontSize: 12, fontWeight: "600" },
+  loadingServices: { padding: 12, alignItems: "center" },
+  noServicesText: { fontSize: 12, color: "#64748b", fontStyle: "italic" },
+  reviewsLink: { marginTop: 8, alignItems: "center" },
+  reviewsLinkText: { fontSize: 12, color: "#2c5a73", fontWeight: "600" },
+  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+  loadingText: { marginTop: 12, fontSize: 14, color: "#64748b" },
+  footerLoader: { paddingVertical: 20, alignItems: "center" },
+  emptyContainer: { alignItems: "center", justifyContent: "center", paddingVertical: 60, paddingHorizontal: 32 },
+  emptyTitle: { fontSize: 18, fontWeight: "600", color: "#1e293b", marginTop: 16, marginBottom: 8 },
+  emptyText: { fontSize: 14, color: "#64748b", textAlign: "center", marginBottom: 20 },
+  resetFiltersBtn: { backgroundColor: "#2c5a73", paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 },
+  resetFiltersText: { color: "#fff", fontSize: 14, fontWeight: "600" },
+  modalContainer: { flex: 1, justifyContent: "flex-end" },
+  modalContent: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: "90%" },
+  bookingModalContent: { maxHeight: "95%" },
+  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
+  modalTitle: { fontSize: 20, fontWeight: "bold", color: "#1e293b" },
+  filterLabel: { fontSize: 16, fontWeight: "600", color: "#1e293b", marginTop: 16, marginBottom: 12 },
+  sortOptions: { flexDirection: "row", flexWrap: "wrap" },
+  sortOption: { paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "#f1f5f9", borderRadius: 20, marginRight: 8, marginBottom: 8 },
+  sortOptionSelected: { backgroundColor: "#2c5a73" },
+  sortOptionText: { fontSize: 13, color: "#64748b", fontWeight: "500" },
+  sortOptionTextSelected: { color: "#fff" },
+  ratingOptions: { flexDirection: "row", marginBottom: 20 },
+  ratingOption: { paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "#f1f5f9", borderRadius: 20, marginRight: 8 },
+  ratingOptionSelected: { backgroundColor: "#2c5a73" },
+  ratingOptionText: { fontSize: 13, color: "#64748b", marginLeft: 4, fontWeight: "500" },
+  ratingOptionTextSelected: { color: "#fff" },
+  filterActions: { flexDirection: "row", justifyContent: "space-between", marginTop: 24, marginBottom: 20 },
+  resetBtn: { flex: 1, paddingVertical: 14, marginRight: 8, borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 12, alignItems: "center" },
+  resetBtnText: { fontSize: 15, fontWeight: "600", color: "#64748b" },
+  applyBtn: { flex: 1, marginLeft: 8, borderRadius: 12, overflow: "hidden" },
+  applyGradient: { paddingVertical: 14, alignItems: "center" },
+  applyBtnText: { fontSize: 15, fontWeight: "600", color: "#fff" },
+  selectedPhotographerInfo: { flexDirection: "row", alignItems: "center", backgroundColor: "#f8fafc", padding: 12, borderRadius: 12, marginBottom: 20 },
+  selectedPhotographerImage: { width: 50, height: 50, borderRadius: 25 },
+  selectedPhotographerName: { fontSize: 14, fontWeight: "600", color: "#1e293b", marginBottom: 2 },
+  selectedServiceSummary: { backgroundColor: "#dbeafe", padding: 12, borderRadius: 12, marginBottom: 16 },
+  summaryTitle: { fontSize: 12, color: "#1e40af", marginBottom: 4 },
+  summaryContent: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  summaryServiceName: { fontSize: 14, fontWeight: "600", color: "#1e293b" },
+  summaryServicePrice: { fontSize: 16, fontWeight: "700", color: "#2c5a73" },
+  summaryServiceDuration: { fontSize: 11, color: "#64748b" },
+  sectionSubtitle: { fontSize: 14, fontWeight: "600", color: "#1e293b", marginBottom: 12, marginTop: 8 },
+  dateSelector: { flexDirection: "row", alignItems: "center", backgroundColor: "#f8fafc", borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 12, padding: 14, marginBottom: 16 },
+  dateText: { flex: 1, fontSize: 14, color: "#1e293b", marginLeft: 10 },
+  timeSlotsGrid: { flexDirection: "row", flexWrap: "wrap", marginBottom: 16 },
+  timeSlot: { width: "48%", marginHorizontal: "1%", backgroundColor: "#f8fafc", borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 12, padding: 12, marginBottom: 8, alignItems: "center" },
+  timeSlotSelected: { backgroundColor: "#2c5a73", borderColor: "#2c5a73" },
+  timeSlotText: { fontSize: 12, color: "#64748b" },
+  timeSlotTextSelected: { color: "#fff" },
+  notesInput: { backgroundColor: "#f8fafc", borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 12, padding: 14, fontSize: 14, color: "#1e293b", minHeight: 80, textAlignVertical: "top", marginBottom: 16 },
+  priceSummary: { backgroundColor: "#f8fafc", borderRadius: 12, padding: 16, marginBottom: 20 },
+  priceSummaryTitle: { fontSize: 14, fontWeight: "600", color: "#1e293b", marginBottom: 12 },
+  priceRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 8 },
+  priceLabel: { fontSize: 13, color: "#64748b" },
+  priceValue: { fontSize: 13, color: "#1e293b", fontWeight: "500" },
+  totalRow: { flexDirection: "row", justifyContent: "space-between", paddingTop: 8, marginTop: 8, borderTopWidth: 1, borderTopColor: "#e2e8f0" },
+  totalLabel: { fontSize: 14, fontWeight: "600", color: "#1e293b" },
+  totalValue: { fontSize: 16, fontWeight: "700", color: "#2c5a73" },
+  paymentOptions: { marginVertical: 16 },
+  payButton: { borderRadius: 12, overflow: "hidden", marginBottom: 12 },
+  payButtonGradient: { paddingVertical: 14, alignItems: "center" },
+  payButtonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  insufficientWallet: { backgroundColor: "#fee2e2", padding: 12, borderRadius: 12, marginBottom: 12, alignItems: "center" },
+  insufficientText: { color: "#b91c1c", fontSize: 14 },
+  modalActions: { flexDirection: "row", justifyContent: "space-between", marginTop: 10, marginBottom: 20 },
+  cancelBtn: { flex: 1, paddingVertical: 14, borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 12, alignItems: "center" },
+  cancelBtnText: { fontSize: 15, fontWeight: "600", color: "#64748b" },
+  buttonDisabled: { opacity: 0.7 },
+  input: { backgroundColor: "#f8fafc", borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 12, padding: 14, fontSize: 14, color: "#1e293b" },
+  promptContent: { backgroundColor: "#fff", borderRadius: 20, padding: 24, alignItems: "center", marginHorizontal: 20 },
+  promptTitle: { fontSize: 20, fontWeight: "bold", color: "#1e293b", marginTop: 16, marginBottom: 8 },
+  promptText: { fontSize: 14, color: "#64748b", textAlign: "center", marginBottom: 24 },
+  promptButtons: { flexDirection: "row", gap: 12 },
+  promptCancelBtn: { flex: 1, paddingVertical: 12, borderRadius: 8, borderWidth: 1, borderColor: "#e2e8f0", alignItems: "center" },
+  promptCancelText: { fontSize: 14, fontWeight: "600", color: "#64748b" },
+  promptLoginBtn: { flex: 1, borderRadius: 8, overflow: "hidden" },
+  promptLoginGradient: { paddingVertical: 12, alignItems: "center" },
+  promptLoginText: { fontSize: 14, fontWeight: "600", color: "#fff" },
+  cardLikeButton: {
+    position: 'absolute',
     top: 8,
     right: 8,
-  },
-  emptyServices: {
-    alignItems: "center",
-    padding: 20,
-  },
-  emptyServicesText: {
-    fontSize: 12,
-    color: "#64748b",
-    marginTop: 8,
-  },
-  dateSelector: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#f8fafc",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 16,
-  },
-  dateText: {
-    flex: 1,
-    fontSize: 14,
-    color: "#1e293b",
-    marginLeft: 10,
-  },
-  timeSlotsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginBottom: 16,
-  },
-  timeSlot: {
-    width: "48%",
-    marginHorizontal: "1%",
-    backgroundColor: "#f8fafc",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
-    alignItems: "center",
-  },
-  timeSlotSelected: {
-    backgroundColor: "#2c5a73",
-    borderColor: "#2c5a73",
-  },
-  timeSlotText: {
-    fontSize: 12,
-    color: "#64748b",
-  },
-  timeSlotTextSelected: {
-    color: "#fff",
-  },
-  notesInput: {
-    backgroundColor: "#f8fafc",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 14,
-    color: "#1e293b",
-    minHeight: 80,
-    textAlignVertical: "top",
-    marginBottom: 16,
-  },
-  priceSummary: {
-    backgroundColor: "#f8fafc",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
-  },
-  priceSummaryTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#1e293b",
-    marginBottom: 12,
-  },
-  priceRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 8,
-  },
-  priceLabel: {
-    fontSize: 13,
-    color: "#64748b",
-  },
-  priceValue: {
-    fontSize: 13,
-    color: "#1e293b",
-    fontWeight: "500",
-  },
-  totalRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingTop: 8,
-    marginTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: "#e2e8f0",
-  },
-  totalLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#1e293b",
-  },
-  totalValue: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#2c5a73",
-  },
-  modalActions: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 10,
-    marginBottom: 20,
-  },
-  cancelBtn: {
-    flex: 1,
-    paddingVertical: 14,
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  cancelBtnText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#64748b",
-  },
-  confirmBtn: {
-    flex: 1,
-    marginLeft: 8,
-    borderRadius: 12,
-    overflow: "hidden",
-  },
-  confirmGradient: {
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  confirmBtnText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#fff",
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  input: {
-    backgroundColor: "#f8fafc",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 14,
-    color: "#1e293b",
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    borderRadius: 16,
+    padding: 6,
+    zIndex: 10,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
 });

@@ -17,19 +17,18 @@ import {
 import { MaterialCommunityIcons as Icon } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import api from "../../api/apiClient";
+import { API } from "../../api/endpoints";
 
 const BASE_URL = "https://localguider.sinfode.com";
 
-/* ================= IMAGE HANDLING ================= */
+// Image handling
 const getImageUrl = (path) => {
   if (!path) return null;
   if (path.startsWith("http")) return path;
-  
   const cleanPath = path.replace(/^\/+/, "");
   return `${BASE_URL}/api/image/download/${cleanPath}`;
 };
 
-/* ================= SAFE IMAGE COMPONENT ================= */
 const SafeImage = ({ path, style, fallbackIcon }) => {
   const [hasError, setHasError] = useState(false);
   const imageUrl = getImageUrl(path);
@@ -61,79 +60,37 @@ export default function PhotographerRequests({ navigation }) {
   const [declineReason, setDeclineReason] = useState("");
   const [processingId, setProcessingId] = useState(null);
 
-  /* ================= LOAD ONLY IN REVIEW PHOTOGRAPHERS ================= */
-  const loadPhotographerRequests = async () => {
+  // ✅ Load only IN_REVIEW photographers
+  const loadPendingRequests = async () => {
     try {
       setLoading(true);
-      console.log("📡 Loading photographer requests...");
-      
-      // Mock data - Only show IN_REVIEW
-      const allPhotographers = [
-        {
-          id: 1,
-          userId: 53,
-          firmName: "Sanju Singh Photography",
-          name: "Sanju Singh",
-          description: "Professional photographer specializing in weddings and events with 10+ years of experience",
-          phone: "9460097816",
-          email: "sanju@gmail.com",
-          address: "Sikar, Rajasthan",
-          placeName: "Sikar",
-          photograph: "image_1770716604891.jpg",
-          approvalStatus: "APPROVED",
-          createdOn: "2026-02-05T09:29:36.456+00:00",
-          rating: 4.5,
-        },
-        {
-          id: 2,
-          userId: 57,
-          firmName: "Anand Photography",
-          name: "Anand Sharma",
-          description: "Professional photography services for all occasions including weddings, parties, and corporate events",
-          phone: "9876543288",
-          email: "anand.sharma@gmail.com",
-          address: "Jaipur, Rajasthan",
-          placeName: "Jaipur",
-          photograph: null,
-          approvalStatus: "IN_REVIEW",
-          createdOn: "2026-02-26T10:30:00.456+00:00",
-          rating: 0,
-          documents: [
-            "license_anand.pdf",
-            "portfolio_sample.jpg"
-          ]
-        },
-        {
-          id: 3,
-          userId: 58,
-          firmName: "Priya Creative Studio",
-          name: "Priya Singh",
-          description: "Creative photography and videography specializing in fashion and portrait photography",
-          phone: "9876543299",
-          email: "priya.creative@gmail.com",
-          address: "Delhi, India",
-          placeName: "Delhi",
-          photograph: null,
-          approvalStatus: "IN_REVIEW",
-          createdOn: "2026-02-25T10:30:00.456+00:00",
-          rating: 0,
-          documents: [
-            "business_registration.pdf",
-            "id_proof.pdf"
-          ]
-        }
-      ];
-      
-      // Filter to show ONLY IN_REVIEW
-      const inReviewPhotographers = allPhotographers.filter(
-        p => p.approvalStatus === "IN_REVIEW"
-      );
-      
-      console.log(`📡 Found ${inReviewPhotographers.length} IN_REVIEW photographers`);
-      setPhotographers(inReviewPhotographers);
-      
+      console.log("📡 Loading IN_REVIEW photographers...");
+
+     const formData = new URLSearchParams();
+formData.append("page", "1");
+formData.append("perPage", "100");
+formData.append("status", "In review");
+formData.append("admin", "true");
+
+const response = await api.post(
+  API.GET_PHOTOGRAPHERS_ALL,
+  formData.toString(),
+  {
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+    }
+  }
+);
+
+      if (response.data?.status) {
+        const photographersData = response.data.data || [];
+        console.log(`📡 Found ${photographersData.length} IN_REVIEW photographers`);
+        setPhotographers(photographersData);
+      } else {
+        setPhotographers([]);
+      }
     } catch (error) {
-      console.error("❌ Error:", error);
+      console.error("❌ Error loading photographers:", error);
       Alert.alert("Error", "Failed to load photographer requests");
     } finally {
       setLoading(false);
@@ -142,15 +99,15 @@ export default function PhotographerRequests({ navigation }) {
   };
 
   useEffect(() => {
-    loadPhotographerRequests();
+    loadPendingRequests();
   }, []);
 
   const onRefresh = () => {
     setRefreshing(true);
-    loadPhotographerRequests();
+    loadPendingRequests();
   };
 
-  /* ================= APPROVE ================= */
+  // ✅ Approve photographer
   const handleApprove = async (photographerId) => {
     Alert.alert(
       "Approve Photographer",
@@ -163,19 +120,26 @@ export default function PhotographerRequests({ navigation }) {
             try {
               setProcessingId(photographerId);
               
-              // Remove from list
-              setPhotographers(prev => 
-                prev.filter(p => p.id !== photographerId)
-              );
+              const formData = new URLSearchParams();
+              formData.append("photographerId", photographerId.toString());
+              formData.append("status", "Approved");
               
-              Alert.alert("✅ Success", "Photographer approved successfully!");
-              setActionModal(false);
-              setSelectedPhotographer(null);
-              setDeclineReason("");
-              
+              const response = await api.post(API.RESPOND_PHOTOGRAPHER_REQUEST, formData.toString(), {
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+              });
+
+              if (response.data?.status) {
+                setPhotographers(prev => prev.filter(p => p.id !== photographerId));
+                Alert.alert("✅ Success", "Photographer approved successfully!");
+                setActionModal(false);
+                setSelectedPhotographer(null);
+                setDeclineReason("");
+              } else {
+                Alert.alert("Error", response.data?.message || "Failed to approve");
+              }
             } catch (error) {
               console.error("❌ Error:", error);
-              Alert.alert("Error", "Failed to approve");
+              Alert.alert("Error", "Failed to approve. Please try again.");
             } finally {
               setProcessingId(null);
             }
@@ -185,7 +149,7 @@ export default function PhotographerRequests({ navigation }) {
     );
   };
 
-  /* ================= DECLINE ================= */
+  // ✅ Decline photographer
   const handleDecline = async (photographerId) => {
     if (!declineReason.trim()) {
       Alert.alert("Reason Required", "Please enter reason for declining");
@@ -204,19 +168,27 @@ export default function PhotographerRequests({ navigation }) {
             try {
               setProcessingId(photographerId);
               
-              // Remove from list
-              setPhotographers(prev => 
-                prev.filter(p => p.id !== photographerId)
-              );
+              const formData = new URLSearchParams();
+              formData.append("photographerId", photographerId.toString());
+              formData.append("status", "DECLINED");
+              formData.append("reasonOfDecline", declineReason);
               
-              Alert.alert("✅ Success", "Photographer declined");
-              setActionModal(false);
-              setSelectedPhotographer(null);
-              setDeclineReason("");
-              
+              const response = await api.post(API.RESPOND_PHOTOGRAPHER_REQUEST, formData.toString(), {
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+              });
+
+              if (response.data?.status) {
+                setPhotographers(prev => prev.filter(p => p.id !== photographerId));
+                Alert.alert("✅ Success", "Photographer declined");
+                setActionModal(false);
+                setSelectedPhotographer(null);
+                setDeclineReason("");
+              } else {
+                Alert.alert("Error", response.data?.message || "Failed to decline");
+              }
             } catch (error) {
               console.error("❌ Error:", error);
-              Alert.alert("Error", "Failed to decline");
+              Alert.alert("Error", "Failed to decline. Please try again.");
             } finally {
               setProcessingId(null);
             }
@@ -226,56 +198,50 @@ export default function PhotographerRequests({ navigation }) {
     );
   };
 
-  /* ================= VIEW DETAILS ================= */
   const viewPhotographerDetails = (photographer) => {
-    console.log("Opening details for photographer ID:", photographer.id);
     setSelectedPhotographer(photographer);
     setDeclineReason("");
     setActionModal(true);
   };
 
-  /* ================= RENDER PHOTOGRAPHER ITEM ================= */
-  const renderPhotographerItem = ({ item }) => {
-    return (
-      <TouchableOpacity
-        style={styles.card}
-        onPress={() => viewPhotographerDetails(item)}
-        activeOpacity={0.7}
-      >
-        <View style={styles.cardHeader}>
-          <SafeImage
-            path={item.photograph}
-            style={styles.avatar}
-            fallbackIcon="camera"
-          />
+  const renderPhotographerItem = ({ item }) => (
+    <TouchableOpacity
+      style={styles.card}
+      onPress={() => viewPhotographerDetails(item)}
+      activeOpacity={0.7}
+    >
+      <View style={styles.cardHeader}>
+        <SafeImage
+          path={item.photograph || item.featuredImage}
+          style={styles.avatar}
+          fallbackIcon="camera"
+        />
 
-          <View style={styles.userInfo}>
-            <Text style={styles.name} numberOfLines={1}>{item.firmName || item.name}</Text>
-            <Text style={styles.email} numberOfLines={1}>{item.email}</Text>
-            <Text style={styles.phone}>{item.phone}</Text>
-            {item.placeName && (
-              <Text style={styles.location}>
-                <Icon name="map-marker" size={12} color="#666" />
-                {" " + item.placeName}
-              </Text>
-            )}
-            <View style={[styles.statusBadge, { backgroundColor: "#FEF3C7" }]}>
-              <Text style={[styles.statusText, { color: "#F59E0B" }]}>PENDING REVIEW</Text>
-            </View>
+        <View style={styles.userInfo}>
+          <Text style={styles.name} numberOfLines={1}>{item.firmName || item.name}</Text>
+          <Text style={styles.email} numberOfLines={1}>{item.email}</Text>
+          <Text style={styles.phone}>{item.phone}</Text>
+          {item.placeName && (
+            <Text style={styles.location}>
+              <Icon name="map-marker" size={12} color="#666" />
+              {" " + item.placeName}
+            </Text>
+          )}
+          <View style={[styles.statusBadge, { backgroundColor: "#FEF3C7" }]}>
+            <Text style={[styles.statusText, { color: "#F59E0B" }]}>PENDING REVIEW</Text>
           </View>
         </View>
-        
-        <View style={styles.cardFooter}>
-          <Text style={styles.requestDate}>
-            Requested: {item.createdOn ? new Date(item.createdOn).toLocaleDateString() : "N/A"}
-          </Text>
-          <Icon name="chevron-right" size={20} color="#2c5a73" />
-        </View>
-      </TouchableOpacity>
-    );
-  };
+      </View>
+      
+      <View style={styles.cardFooter}>
+        <Text style={styles.requestDate}>
+          Requested: {item.createdOn ? new Date(item.createdOn).toLocaleDateString() : "N/A"}
+        </Text>
+        <Icon name="chevron-right" size={20} color="#2c5a73" />
+      </View>
+    </TouchableOpacity>
+  );
 
-  /* ================= UI ================= */
   if (loading) {
     return (
       <View style={styles.center}>
@@ -350,7 +316,7 @@ export default function PhotographerRequests({ navigation }) {
               {/* Profile Image Section */}
               <View style={styles.modalProfileSection}>
                 <SafeImage
-                  path={selectedPhotographer.photograph}
+                  path={selectedPhotographer.photograph || selectedPhotographer.featuredImage}
                   style={styles.modalAvatar}
                   fallbackIcon="camera"
                 />
@@ -463,19 +429,6 @@ export default function PhotographerRequests({ navigation }) {
                 </View>
               </View>
 
-              {/* Documents Section */}
-              {selectedPhotographer.documents && selectedPhotographer.documents.length > 0 && (
-                <View style={styles.modalSection}>
-                  <Text style={styles.modalSectionTitle}>📎 Submitted Documents</Text>
-                  {selectedPhotographer.documents.map((doc, index) => (
-                    <View key={index} style={styles.documentItem}>
-                      <Icon name="file-pdf" size={20} color="#EF4444" />
-                      <Text style={styles.documentName}>{doc}</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-
               {/* Actions */}
               <View style={styles.modalActionSection}>
                 <Text style={styles.modalActionTitle}>⚡ Take Action</Text>
@@ -533,7 +486,6 @@ export default function PhotographerRequests({ navigation }) {
   );
 }
 
-/* ================= STYLES ================= */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f5f7fa" },
   center: { flex: 1, justifyContent: "center", alignItems: "center", padding: 20 },
@@ -604,10 +556,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "#f1f5f9",
   },
-  requestDate: { 
-    fontSize: 11, 
-    color: "#94a3b8", 
-  },
+  requestDate: { fontSize: 11, color: "#94a3b8" },
   
   emptyTitle: { fontSize: 20, fontWeight: "600", color: "#64748b", marginTop: 16, marginBottom: 8 },
   emptySubtitle: { fontSize: 14, color: "#94a3b8", textAlign: "center", marginBottom: 10 },
@@ -621,10 +570,7 @@ const styles = StyleSheet.create({
   retryButtonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
   
   // MODAL STYLES
-  modalContainer: {
-    flex: 1,
-    backgroundColor: "#f5f7fa",
-  },
+  modalContainer: { flex: 1, backgroundColor: "#f5f7fa" },
   modalHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -643,15 +589,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  modalHeaderTitle: { 
-    fontSize: 18, 
-    fontWeight: "bold", 
-    color: "#fff" 
-  },
-  modalContent: { 
-    flex: 1,
-    padding: 16,
-  },
+  modalHeaderTitle: { fontSize: 18, fontWeight: "bold", color: "#fff" },
+  modalContent: { flex: 1, padding: 16 },
   
   // Profile Section
   modalProfileSection: {
@@ -686,10 +625,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 20,
   },
-  modalStatusText: {
-    fontSize: 12,
-    fontWeight: "bold",
-  },
+  modalStatusText: { fontSize: 12, fontWeight: "bold" },
   
   // Info Sections
   modalSection: {
@@ -712,9 +648,7 @@ const styles = StyleSheet.create({
     borderBottomColor: "#e2e8f0",
     paddingBottom: 8,
   },
-  modalInfoGrid: {
-    gap: 12,
-  },
+  modalInfoGrid: { gap: 12 },
   modalInfoRow: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -727,39 +661,14 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 8,
   },
-  modalInfoLabel: {
-    fontSize: 14,
-    color: "#64748b",
-    fontWeight: "500",
-  },
-  modalInfoValue: {
-    flex: 1,
-    fontSize: 14,
-    color: "#1e293b",
-    fontWeight: "500",
-    textAlign: "right",
-  },
+  modalInfoLabel: { fontSize: 14, color: "#64748b", fontWeight: "500" },
+  modalInfoValue: { flex: 1, fontSize: 14, color: "#1e293b", fontWeight: "500", textAlign: "right" },
   modalDescription: {
     fontSize: 14,
     color: "#1e293b",
     lineHeight: 20,
     marginBottom: 12,
     paddingHorizontal: 26,
-  },
-  
-  // Documents
-  documentItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
-  },
-  documentName: {
-    fontSize: 14,
-    color: "#1e293b",
-    marginLeft: 12,
-    flex: 1,
   },
   
   // Action Section
@@ -774,12 +683,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
   },
-  modalActionTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#1e293b",
-    marginBottom: 16,
-  },
+  modalActionTitle: { fontSize: 18, fontWeight: "bold", color: "#1e293b", marginBottom: 16 },
   modalApproveBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -792,17 +696,8 @@ const styles = StyleSheet.create({
     borderColor: "#10B981",
     gap: 8,
   },
-  modalApproveText: { 
-    color: "#10B981", 
-    fontSize: 16, 
-    fontWeight: "bold" 
-  },
-  modalReasonLabel: { 
-    fontSize: 14, 
-    color: "#475569", 
-    marginBottom: 8,
-    fontWeight: "500",
-  },
+  modalApproveText: { color: "#10B981", fontSize: 16, fontWeight: "bold" },
+  modalReasonLabel: { fontSize: 14, color: "#475569", marginBottom: 8, fontWeight: "500" },
   modalReasonInput: {
     borderWidth: 1,
     borderColor: "#e2e8f0",
@@ -825,11 +720,7 @@ const styles = StyleSheet.create({
     borderColor: "#EF4444",
     gap: 8,
   },
-  modalDeclineText: { 
-    color: "#EF4444", 
-    fontSize: 16, 
-    fontWeight: "bold" 
-  },
+  modalDeclineText: { color: "#EF4444", fontSize: 16, fontWeight: "bold" },
   
   imagePlaceholder: {
     width: "100%",
@@ -842,4 +733,4 @@ const styles = StyleSheet.create({
     borderStyle: "dashed",
     borderRadius: 8,
   },
-});1
+});

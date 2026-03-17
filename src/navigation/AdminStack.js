@@ -12,7 +12,7 @@
   import PlaceList from "../screens/Admin/PlaceList";
   import PlaceGallery from "../screens/Admin/PlaceGallery";
   import NotificationList from "../screens/Admin/NotificationList";
-
+  import AddPlaceScreen from "../screens/Admin/AddPlaceScreen";
   import AdminSettings from "../screens/Admin/AdminSettings";
   import WithdrawalList from "../screens/Admin/WithdrawalList";
   import AppointmentList from "../screens/Admin/AppointmentList";
@@ -75,7 +75,14 @@
             title: "Photographer Requests",
           }}
         />
-
+<Stack.Screen
+          name="AddPlaceScreen"
+          component={AddPlaceScreen}
+          options={{
+            headerShown: false,
+            title: "Photographer Requests",
+          }}
+        />
         <Stack.Screen 
           name="PlaceList" 
           component={PlaceList} 

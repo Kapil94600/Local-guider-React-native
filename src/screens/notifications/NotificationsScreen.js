@@ -69,18 +69,22 @@ export default function NotificationsScreen({ navigation }) {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  // Determine user role and ID for API params
+  // Determine user role and correct ID for API params
   const getNotificationParams = () => {
     const params = {
       page: 1,
       perPage: 20,
     };
 
-    if (user?.role === "GUIDER") {
-      params.guiderId = user.gId || user.id;
-    } else if (user?.role === "PHOTOGRAPHER") {
-      params.photographerId = user.pId || user.id;
+    // user.role is set during login: "photographer", "guider", or "user"
+    if (user?.role === "GUIDER" || user?.role === "guider") {
+      // For guider, use the guider's own ID (nested under user.guider)
+      params.guiderId = user.guider?.id || user.id; // fallback to user.id if guider missing
+    } else if (user?.role === "PHOTOGRAPHER" || user?.role === "photographer") {
+      // For photographer, use the photographer's own ID
+      params.photographerId = user.photographer?.id || user.id;
     } else {
+      // Regular user
       params.userId = user?.id;
     }
 
@@ -88,41 +92,41 @@ export default function NotificationsScreen({ navigation }) {
   };
 
   // Fetch notifications from API
-  const fetchNotifications = async (pageNum = 1, append = false) => {
-    try {
-      if (pageNum === 1) setLoading(true);
-      else setLoadingMore(true);
+const fetchNotifications = async (pageNum = 1, append = false) => {
+  try {
+    if (pageNum === 1) setLoading(true);
+    else setLoadingMore(true);
 
-      const params = {
-        ...getNotificationParams(),
-        page: pageNum,
-        perPage: 20,
-      };
+    const params = {
+      ...getNotificationParams(),
+      page: pageNum,
+      perPage: 20,
+    };
 
-      const response = await api.post("/notification/get", null, { params });
+    // ✅ Use the correct endpoint
+    const response = await api.post("/notification/get_by_id", null, { params });
 
-      if (response.data?.status) {
-        const newNotifications = response.data.data || [];
-        
-        if (append) {
-          setNotifications(prev => [...prev, ...newNotifications]);
-        } else {
-          setNotifications(newNotifications);
-        }
-        
-        setHasMore(newNotifications.length === 20);
-        setPage(pageNum);
+    if (response.data?.status) {
+      const newNotifications = response.data.data || [];
+      
+      if (append) {
+        setNotifications(prev => [...prev, ...newNotifications]);
+      } else {
+        setNotifications(newNotifications);
       }
-    } catch (error) {
-      console.error("Error fetching notifications:", error);
-      Alert.alert("Error", "Failed to load notifications");
-    } finally {
-      setLoading(false);
-      setLoadingMore(false);
-      setRefreshing(false);
+      
+      setHasMore(newNotifications.length === 20);
+      setPage(pageNum);
     }
-  };
-
+  } catch (error) {
+    console.error("Error fetching notifications:", error);
+    Alert.alert("Error", "Failed to load notifications");
+  } finally {
+    setLoading(false);
+    setLoadingMore(false);
+    setRefreshing(false);
+  }
+};
   // Load more notifications on scroll
   const loadMore = () => {
     if (hasMore && !loadingMore) {
@@ -367,6 +371,13 @@ export default function NotificationsScreen({ navigation }) {
       </View>
     );
   };
+
+  // Initial fetch
+  useEffect(() => {
+    if (user?.id) {
+      fetchNotifications();
+    }
+  }, [user]);
 
   return (
     <View style={styles.container}>

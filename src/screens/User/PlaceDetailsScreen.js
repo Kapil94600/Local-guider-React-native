@@ -51,7 +51,7 @@ const RatingStars = ({ rating, size = 14 }) => {
   return <View style={styles.ratingStarsContainer}>{stars}</View>;
 };
 
-// Horizontal Review Card
+// Horizontal Review Card - Fixed layout
 const ReviewCard = ({ review }) => {
   const formatDate = (dateString) => {
     if (!dateString) return "";
@@ -83,13 +83,39 @@ const ReviewCard = ({ review }) => {
           <RatingStars rating={review?.rating} size={10} />
         </View>
       </View>
-      <Text style={styles.reviewText} numberOfLines={3}>{reviewText}</Text>
+      <Text style={styles.reviewText} numberOfLines={2}>{reviewText}</Text>
       <Text style={styles.reviewDate}>{formatDate(review?.createdOn)}</Text>
     </View>
   );
 };
 
-// Animated Professional Card
+// Horizontal Card for Professionals (square, image + name + rating)
+const HorizontalProfessionalCard = ({ item, type, onPress }) => {
+  const imageUrl = item?.photograph || item?.featuredImage || item?.profileImage;
+  const name = item?.firmName || item?.name || (type === "guider" ? "Tour Guide" : "Photographer");
+  const rating = item?.rating || 0;
+
+  return (
+    <TouchableOpacity style={styles.horizontalCard} onPress={onPress} activeOpacity={0.8}>
+      <View style={styles.horizontalCardImageContainer}>
+        {imageUrl ? (
+          <Image source={{ uri: getImageUrl(imageUrl) }} style={styles.horizontalCardImage} />
+        ) : (
+          <LinearGradient
+            colors={type === "guider" ? ["#3B82F6", "#1E40AF"] : ["#8B5CF6", "#6D28D9"]}
+            style={styles.horizontalCardPlaceholder}
+          >
+            <Text style={styles.horizontalCardInitial}>{name.charAt(0).toUpperCase()}</Text>
+          </LinearGradient>
+        )}
+      </View>
+      <Text style={styles.horizontalCardName} numberOfLines={1}>{name}</Text>
+      <RatingStars rating={rating} size={12} />
+    </TouchableOpacity>
+  );
+};
+
+// AnimatedProfessionalCard (kept for reference)
 const AnimatedProfessionalCard = ({ item, type, rank, onPress }) => {
   const scaleValue = useRef(new Animated.Value(1)).current;
 
@@ -109,7 +135,7 @@ const AnimatedProfessionalCard = ({ item, type, rank, onPress }) => {
 
   const imageUrl = item?.photograph || item?.featuredImage || item?.profileImage;
   const name = item?.firmName || item?.name || (type === "guider" ? "Tour Guide" : "Photographer");
-  const location = item?.city || item?.state || "Location";
+  const location = item?.city || item?.state ;
   const badge = item?.specialization || (type === "guider" ? "Tour Guide" : "Photographer");
   const gradientColors =
     type === "guider" ? ["#3B82F6", "#1E40AF"] : ["#8B5CF6", "#6D28D9"];
@@ -240,15 +266,28 @@ export default function PlaceDetailsScreen({ route, navigation }) {
   const fetchGuiders = async () => {
     try {
       setLoadingGuiders(true);
-      const formData = new URLSearchParams();
-      formData.append('placeId', placeId.toString());
 
-      const response = await api.post(API.GET_GUIDERS_BY_PLACE_ID, formData.toString(), {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-      });
+      const formData = new URLSearchParams();
+      formData.append("latitude", location?.latitude);
+      formData.append("longitude", location?.longitude);
+      formData.append("status", "Approved");
+
+      const response = await api.post(
+        API.GET_GUIDERS_ALL,
+        formData.toString(),
+        {
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+        }
+      );
 
       if (response?.data?.status === true) {
-        setGuiders(response.data.data || []);
+        const allGuiders = response.data.data || [];
+        const filtered = allGuiders.filter(
+          (g) => g.placeId === placeId || g.places?.includes(placeId.toString())
+        );
+        setGuiders(filtered);
       } else {
         setGuiders([]);
       }
@@ -300,6 +339,30 @@ export default function PlaceDetailsScreen({ route, navigation }) {
     setRefreshing(true);
     await fetchAllData();
     setRefreshing(false);
+  };
+
+  // Helper to format location: clean up extra parts
+  const getLocationDisplay = () => {
+    let city = place.city || "";
+    let state = place.state || "";
+
+    // If city contains commas, take first part
+    if (city.includes(',')) {
+      city = city.split(',')[0].trim();
+    }
+    if (state.includes(',')) {
+      state = state.split(',')[0].trim();
+    }
+
+    if (city && state) {
+      return `${city}, ${state}`;
+    } else if (city) {
+      return city;
+    } else if (state) {
+      return state;
+    } else {
+      return "Jaipur"; // fallback
+    }
   };
 
   if (loading) {
@@ -364,27 +427,25 @@ export default function PlaceDetailsScreen({ route, navigation }) {
           <View style={styles.textContentContainer}>
             <Text style={styles.placeNameText}>{place.placeName}</Text>
             <View style={styles.infoRow}>
-              <Ionicons name="time-outline" size={16} color="#4b5563" />
-              <Text style={styles.infoText}>Explores in: 02hr 23 min</Text>
+              {/* <Ionicons name="time-outline" size={16} color="#4b5563" /> */}
+              {/* <Text style={styles.infoText}>Explores in: 02hr 23 min</Text> */}
             </View>
             <View style={styles.infoRow}>
               <Ionicons name="location-outline" size={16} color="#4b5563" />
-              <Text style={styles.infoText}>
-                {place.city || "Jaipur"} {place.state ? `(${place.state})` : ""}
-              </Text>
+              <Text style={styles.infoText}>{getLocationDisplay()}</Text>
             </View>
             <RatingStars rating={place.rating} size={16} />
-          </View>
-        </View>
 
-        {/* Description */}
-        <View style={styles.descriptionContainer}>
-          <Text style={styles.descriptionText}>{getDisplayDescription()}</Text>
-          {needsReadMore && (
-            <TouchableOpacity onPress={toggleDescription} style={styles.readMoreButton}>
-              <Text style={styles.readMoreText}>{descExpanded ? "Read Less" : "Read More"}</Text>
-            </TouchableOpacity>
-          )}
+            {/* Description moved here, directly under rating */}
+            <View style={styles.descriptionContainer}>
+              <Text style={styles.descriptionText}>{getDisplayDescription()}</Text>
+              {needsReadMore && (
+                <TouchableOpacity onPress={toggleDescription} style={styles.readMoreButton}>
+                  <Text style={styles.readMoreText}>{descExpanded ? "Read Less" : "Read More"}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
         </View>
 
         {/* Reviews Section - Horizontal Scroll */}
@@ -415,7 +476,7 @@ export default function PlaceDetailsScreen({ route, navigation }) {
           )}
         </View>
 
-        {/* Top Guiders Section */}
+        {/* Top Guiders Section - Horizontal Square Cards */}
         <View style={styles.personsSection}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Top Guider</Text>
@@ -430,20 +491,25 @@ export default function PlaceDetailsScreen({ route, navigation }) {
               <Text style={styles.loadingMoreText}>Loading guides...</Text>
             </View>
           ) : guiders.length > 0 ? (
-            guiders.map((guider, index) => (
-              <AnimatedProfessionalCard
-                key={guider.id}
-                item={guider}
-                type="guider"
-                rank={index + 1}
-                onPress={() => navigation.navigate("ProfessionalDetails", {
-                  professionalId: guider.id,
-                  professionalType: 'guider',
-                  placeId: place.id,
-                  placeName: place.placeName,
-                })}
-              />
-            ))
+            <FlatList
+              data={guiders}
+              renderItem={({ item }) => (
+                <HorizontalProfessionalCard
+                  item={item}
+                  type="guider"
+                  onPress={() => navigation.navigate("ProfessionalDetails", {
+                    professionalId: item.id,
+                    professionalType: 'guider',
+                    placeId: place.id,
+                    placeName: place.placeName,
+                  })}
+                />
+              )}
+              keyExtractor={(item) => item.id.toString()}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.horizontalList}
+            />
           ) : (
             <View style={styles.emptyContainer}>
               <Ionicons name="people-outline" size={40} color="#94a3b8" />
@@ -452,7 +518,7 @@ export default function PlaceDetailsScreen({ route, navigation }) {
           )}
         </View>
 
-        {/* Top Photographers Section */}
+        {/* Top Photographers Section - Horizontal Square Cards */}
         <View style={styles.personsSection}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Top Photographer</Text>
@@ -467,20 +533,25 @@ export default function PlaceDetailsScreen({ route, navigation }) {
               <Text style={styles.loadingMoreText}>Loading photographers...</Text>
             </View>
           ) : photographers.length > 0 ? (
-            photographers.map((photographer, index) => (
-              <AnimatedProfessionalCard
-                key={photographer.id}
-                item={photographer}
-                type="photographer"
-                rank={index + 1}
-                onPress={() => navigation.navigate("ProfessionalDetails", {
-                  professionalId: photographer.id,
-                  professionalType: 'photographer',
-                  placeId: place.id,
-                  placeName: place.placeName,
-                })}
-              />
-            ))
+            <FlatList
+              data={photographers}
+              renderItem={({ item }) => (
+                <HorizontalProfessionalCard
+                  item={item}
+                  type="photographer"
+                  onPress={() => navigation.navigate("ProfessionalDetails", {
+                    professionalId: item.id,
+                    professionalType: 'photographer',
+                    placeId: place.id,
+                    placeName: place.placeName,
+                  })}
+                />
+              )}
+              keyExtractor={(item) => item.id.toString()}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.horizontalList}
+            />
           ) : (
             <View style={styles.emptyContainer}>
               <Ionicons name="camera-outline" size={40} color="#94a3b8" />
@@ -510,7 +581,7 @@ export default function PlaceDetailsScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f8fafc" },
+  container: { flex: 1, backgroundColor: "#ffffff" },
   loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   loadingText: { marginTop: 12, fontSize: 16, color: "#64748b" },
   loadingMoreContainer: { padding: 20, alignItems: "center" },
@@ -525,19 +596,24 @@ const styles = StyleSheet.create({
   
   // Place Card
   rowContainer: { flexDirection: "row", padding: 16, gap: 16 },
-  coverContainer: { width: 140, height: 160, borderRadius: 12, overflow: "hidden", borderWidth: 2, borderColor: "#e2e8f0", backgroundColor: "#fff" },
+  coverContainer: { width: 125, height: 125, borderRadius: 12, overflow: "hidden", borderWidth: 5, borderColor: "#ffffff", backgroundColor: "#fff", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 5, elevation: 5,
+    shadowColor: "#000",
+    shadowOffset: { width: 8, height: 2 },
+    shadowOpacity: 0.4,
+    
+    shadowRadius: 4, },
   coverImage: { width: "100%", height: "100%" },
   coverPlaceholder: { width: "100%", height: "100%", justifyContent: "center", alignItems: "center" },
-  textContentContainer: { flex: 1, justifyContent: "center" },
-  placeNameText: { fontSize: 20, fontWeight: "700", color: "#1e293b", marginBottom: 8 },
+  textContentContainer: { flex: 1, justifyContent: "center", alignContent: "center", alignItems: "center" },
+  placeNameText: { fontSize: 21, fontWeight: "700", color: "#2c5a73", marginBottom: 8 },
   infoRow: { flexDirection: "row", alignItems: "center", marginBottom: 6, gap: 8 },
-  infoText: { fontSize: 14, color: "#4b5563" },
+  infoText: { fontSize: 12, color: "#63676d" },
   ratingStarsContainer: { flexDirection: "row", marginTop: 4, gap: 2 },
   
   // Description
-  descriptionContainer: { paddingHorizontal: 16, paddingBottom: 16, backgroundColor: "#fff", marginTop: 8, paddingTop: 16 },
-  descriptionText: { fontSize: 14, color: "#475569", lineHeight: 20 },
-  readMoreButton: { marginTop: 8 },
+  descriptionContainer: { marginTop: 12 },
+  descriptionText: { fontSize: 11, color: "#63676d", lineHeight: 20,fontWeight: "500", textAlign: "center" },
+  readMoreButton: { marginTop: 4 },
   readMoreText: { fontSize: 14, color: "#2c5a73", fontWeight: "600" },
   
   // Sections
@@ -548,21 +624,22 @@ const styles = StyleSheet.create({
   sortButton: { padding: 4 },
   sortButtonText: { fontSize: 13, color: "#2c5a73", fontWeight: "500" },
   
-  // Horizontal Review Card
+  // Horizontal Review Card - adjusted height and layout
   reviewsHorizontalList: { paddingRight: 16, gap: 12 },
   reviewCard: {
-    width: 260,
-    backgroundColor: "#f8fafc",
+    width: 220,
+    backgroundColor: "#ffffff",
     borderRadius: 12,
     padding: 12,
     marginRight: 12,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
     elevation: 2,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
+    shadowOffset: { width: 3, height: 2 },
+    shadowOpacity: 0.15,
     shadowRadius: 2,
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: "#f6f6f6",
   },
   reviewHeader: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
   reviewerImage: { width: 36, height: 36, borderRadius: 18, marginRight: 8 },
@@ -570,11 +647,41 @@ const styles = StyleSheet.create({
   reviewerInitial: { fontSize: 16, fontWeight: "bold", color: "#fff" },
   reviewerInfo: { flex: 1 },
   reviewerName: { fontSize: 13, fontWeight: "600", color: "#1e293b" },
-  reviewText: { fontSize: 12, color: "#475569", lineHeight: 16, marginBottom: 4 },
-  reviewDate: { fontSize: 10, color: "#94a3b8", alignSelf: "flex-end" },
+  reviewText: { fontSize: 12, color: "#475569", lineHeight: 16, marginBottom: 6 },
+  reviewDate: { fontSize: 10, color: "#94a3b8", alignSelf: "flex-end", marginTop: 2 },
   
-  // Professional Card
-  personCard: { flexDirection: "row", backgroundColor: "#f8fafc", borderRadius: 12, padding: 12, marginBottom: 12, alignItems: "center", borderWidth: 1, borderColor: "#e2e8f0" },
+  // Horizontal Professional Card (square)
+  horizontalList: { paddingRight: 16, gap: 12 },
+  horizontalCard: {
+     borderWidth: 1,
+    borderColor: "#f6f6f6",
+    width: 140,
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    marginRight: 12,
+    padding: 8,
+    alignItems: "center",
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    marginBottom: 8,
+  },
+  horizontalCardImageContainer: {
+    width: 120,
+    height: 100,
+    borderRadius: 12,
+    overflow: "hidden",
+    marginBottom: 8,
+  },
+  horizontalCardImage: { width: "100%", height: "100%" },
+  horizontalCardPlaceholder: { width: "100%", height: "100%", justifyContent: "center", alignItems: "center" },
+  horizontalCardInitial: { fontSize: 40, fontWeight: "bold", color: "#fff" },
+  horizontalCardName: { fontSize: 14, fontWeight: "600", color: "#1e293b", textAlign: "center", marginBottom: 4 },
+  
+  // (Optional) AnimatedProfessionalCard styles
+  personCard: { flexDirection: "row", backgroundColor: "#f8fafc", borderRadius: 12, padding: 12, marginBottom: 12, alignItems: "center" },
   personRank: { width: 30, height: 30, borderRadius: 15, backgroundColor: "#2c5a73", justifyContent: "center", alignItems: "center", marginRight: 12 },
   personRankText: { fontSize: 14, fontWeight: "bold", color: "#fff" },
   personImageContainer: { width: 60, height: 60, borderRadius: 30, overflow: "hidden", marginRight: 12 },

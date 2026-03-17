@@ -16,21 +16,26 @@ import {
   StatusBar,
   Dimensions,
   SafeAreaView,
+  Platform,
+  KeyboardAvoidingView,
 } from "react-native";
 import { AuthContext } from "../context/AuthContext";
 import api from "../api/apiClient";
 import { API } from "../api/endpoints";
-import { Ionicons, MaterialIcons, Feather } from "@expo/vector-icons";
+import { Ionicons, Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
 import { BlurView } from "expo-blur";
 import MenuModal from "../components/MenuModal";
+import { useMediaLibraryPermissions } from 'expo-image-picker';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 
 const { width } = Dimensions.get("window");
 const BASE_URL = "https://localguider.sinfode.com";
 
 export default function GuiderDashboard({ navigation }) {
-  const { user, refreshUser, logout } = useContext(AuthContext);
+  const { user, logout } = useContext(AuthContext);
   const [profile, setProfile] = useState(null);
   const [bookings, setBookings] = useState([]);
   const [services, setServices] = useState([]);
@@ -47,6 +52,9 @@ export default function GuiderDashboard({ navigation }) {
   const [menuVisible, setMenuVisible] = useState(false);
   const [places, setPlaces] = useState([]);
   const [selectedPlaces, setSelectedPlaces] = useState([]);
+
+  const [mediaLibraryPermission, requestMediaLibraryPermission] = useMediaLibraryPermissions();
+const guiderId = profile?.id || user?.id;
 
   // Modal States
   const [serviceModal, setServiceModal] = useState(false);
@@ -91,50 +99,17 @@ export default function GuiderDashboard({ navigation }) {
     places: "",
   });
 
-  useEffect(() => {
+  // ============ DATA LOADING ============
+
+useEffect(() => {
+  if (user?.id) {
+    loadGuiderDetails();
     loadAllData();
-    requestPermissions();
     loadNotifications();
     loadPlaces();
-  }, []);
-
-  const requestPermissions = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please allow access to your photo library.');
-    }
-  };
-
-  // ✅ Safe image URL function with null check
-  const getImageUrl = (path) => {
-    if (!path) return null;
-    if (typeof path !== 'string') return null;
-    if (path.startsWith("http")) return path;
-    try {
-      const filename = path.split("/").pop();
-      return `${BASE_URL}/api/image/download/${filename}`;
-    } catch (error) {
-      console.error("Error parsing image path:", error);
-      return null;
-    }
-  };
-
-  // ✅ Load places for selection
-  const loadPlaces = async () => {
-    try {
-      const response = await api.post(API.GET_PLACES, {
-        page: 1,
-        perPage: 100
-      });
-      if (response.data?.status) {
-        setPlaces(response.data.data || []);
-      }
-    } catch (error) {
-      console.error("Error loading places:", error);
-    }
-  };
-
-  // ✅ ALL API CALLS USE POST METHOD
+    fetchUserProfile();
+  }
+}, [user]);
   const loadAllData = async () => {
     try {
       setLoading(true);
@@ -152,71 +127,103 @@ export default function GuiderDashboard({ navigation }) {
       setLoading(false);
     }
   };
+  const fetchUserProfile = async () => {
+  try {
+    const token = await AsyncStorage.getItem("token");
+    if (!token || !user?.id) return;
 
-  // ✅ Load guider details and set wallet from balance field
-  const loadGuiderDetails = async () => {
-    try {
-      const response = await api.post(API.GET_GUIDERS_DETAILS, {
-        guiderId: user?.id
-      });
-      if (response.data?.status) {
-        setProfile(response.data.data);
-        // ✅ Wallet comes from guider's balance field
-        setWallet(response.data.data?.balance || 0);
-        setIsActive(response.data.data?.active || false);
-        setEditForm({
-          firmName: response.data.data?.firmName || "",
-          email: response.data.data?.email || "",
-          phone: response.data.data?.phone || "",
-          address: response.data.data?.address || "",
-          description: response.data.data?.description || "",
-          placeId: response.data.data?.placeId?.toString() || "",
-          places: response.data.data?.places || "",
-        });
+    const formData = new FormData();
+    formData.append("userId", user.id.toString());
 
-        // Parse selected places
-        if (response.data.data?.places) {
-          const placeIds = response.data.data.places.split(',').map(id => parseInt(id));
-          const selected = places.filter(p => placeIds.includes(p.id));
-          setSelectedPlaces(selected);
-        }
-      }
-    } catch (error) {
-      console.error("Error loading guider details:", error);
+    const res = await fetch(`${BASE_URL}/api/user/get_profile`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+
+    const json = await res.json();
+    if (json?.status && json?.data) {
+      setWallet(json.data.balance || 0);
     }
-  };
+  } catch (err) {
+    console.error("Profile fetch error:", err);
+  }
+};
 
-  // ✅ Load bookings for all statuses (because backend defaults to COMPLETED)
+
+ const loadGuiderDetails = async () => {
+  try {
+
+    const params = new URLSearchParams();
+   params.append("userId", user.id.toString());
+
+    const response = await api.post(
+      API.GET_GUIDERS_DETAILS,
+      params.toString(),
+      {
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      }
+    );
+
+    if (response.data?.status) {
+      setProfile(response.data.data);
+    }
+
+  } catch (error) {
+    console.log("Error loading guider details:", error);
+  }
+};
+
   const loadBookings = async () => {
     try {
-      const statuses = ["REQUESTED", "ACCEPTED", "COMPLETED", "CANCELLED", "REJECTED"];
+      const statuses = ["REQUESTED", "ACCEPTED", "COMPLETED", "CANCELED", "REJECTED"];
       let allBookings = [];
 
       for (const status of statuses) {
-        const response = await api.post(API.GET_APPOINTMENTS, {
-          guiderId: user?.id,
-          status: status,
-          page: 1,
-          perPage: 50
+        const params = new URLSearchParams();
+        params.append("guiderId", guiderId.toString());
+        params.append("status", status);
+        params.append("page", "1");
+        params.append("perPage", "50");
+
+        const response = await api.post(API.GET_APPOINTMENTS, params.toString(), {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
         });
-        if (response.data?.status) {
-          allBookings = [...allBookings, ...(response.data.data || [])];
+
+        if (response.data?.status && Array.isArray(response.data.data)) {
+          const mapped = response.data.data.map(item => ({
+            id: item.id,
+            serviceTitle: item.serviceName || item.serviceTitle || 'Tour Package',
+            customerName: item.customerName || 'Tourist',
+            amount: item.serviceCost || item.totalPayment || item.totalAmount || 0,
+            status: item.appointmentStatus || item.status,
+            createdOn: item.date || item.createdOn,
+            time: item.time || 'Flexible',
+            customerPhone: item.customerPhone,
+            rating: item.rating,
+            feedback: item.feedback,
+          }));
+          allBookings = [...allBookings, ...mapped];
         }
       }
 
-      // Sort by date (newest first)
       allBookings.sort((a, b) => new Date(b.createdOn) - new Date(a.createdOn));
       setBookings(allBookings);
     } catch (error) {
-      console.error("Error loading bookings:", error);
+      console.error("❌ Error loading bookings:", error);
+      setBookings([]);
     }
   };
 
   const loadServices = async () => {
     try {
-      const response = await api.post(API.GET_SERVICES, {
-        guiderId: user?.id
+      const params = new URLSearchParams();
+     params.append("guiderId", guiderId.toString());
+
+      const response = await api.post(API.GET_SERVICES, params.toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
+
       if (response.data?.status) {
         setServices(response.data.data || []);
       }
@@ -227,10 +234,14 @@ export default function GuiderDashboard({ navigation }) {
 
   const loadGallery = async () => {
     try {
-      const response = await api.post(API.ALL_IMAGES_BY_ID, {
-        guiderId: user?.id,
-        page: 1
+      const params = new URLSearchParams();
+      params.append("guiderId", guiderId.toString());
+      params.append("page", "1");
+
+      const response = await api.post(API.ALL_IMAGES_BY_ID, params.toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
+
       if (response.data?.status) {
         setGallery(response.data.data || []);
       }
@@ -239,52 +250,87 @@ export default function GuiderDashboard({ navigation }) {
     }
   };
 
-  // ✅ Transactions – only for history, wallet is already set from profile
   const loadTransactions = async () => {
     try {
-      const response = await api.post(API.GET_TRANSACTION, {
-        guiderId: user?.id,
-        page: 1
+      const params = new URLSearchParams();
+      params.append("guiderId", guiderId.toString());
+      params.append("page", "1");
+
+      const response = await api.post(API.GET_TRANSACTION, params.toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
+
       if (response.data?.status) {
         setTransactions(response.data.data || []);
-        // ❌ Do NOT recalculate wallet here – it's already set from profile
       }
     } catch (error) {
       console.error("Error loading transactions:", error);
     }
   };
+console.log("USER DATA 👉", user);
+console.log("GUIDER ID 👉", user?.id);
+ const loadWithdrawals = async () => {
+  try {
 
-  const loadWithdrawals = async () => {
-    try {
-      const response = await api.post(API.GET_WITHDRAWAL, {
-        guiderId: user?.id,
-        page: 1
-      });
-      if (response.data?.status) {
-        setWithdrawals(response.data.data || []);
-        const pending = response.data.data
-          .filter(w => w.status === "PENDING")
-          .reduce((sum, w) => sum + (w.amount || 0), 0);
-        setPendingWithdrawal(pending);
+    const params = new URLSearchParams();
+    params.append("guiderId", guiderId.toString());
+    params.append("page", "1");
+
+    const response = await api.post(
+      API.GET_WITHDRAWAL,
+      params.toString(),
+      {
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
       }
-    } catch (error) {
-      console.error("Error loading withdrawals:", error);
-    }
-  };
+    );
 
+    if (response.data?.status) {
+
+      const list = response.data.data || [];
+
+      setWithdrawals(list);
+
+      const pending = list
+        .filter(w => w.paymentStatus === "In Progress")
+        .reduce((sum, w) => sum + (w.amount || 0), 0);
+
+      setPendingWithdrawal(pending);
+    }
+
+  } catch (error) {
+    console.log("Error loading withdrawals:", error);
+  }
+};
   const loadNotifications = async () => {
     try {
-      const response = await api.post(API.GET_NOTIFICATIONS, {
-        userId: user?.id,
-        userRole: "GUIDER",
-        page: 1
+      const params = new URLSearchParams();
+      params.append("userId", user?.id.toString());
+      params.append("userRole", "GUIDER");
+      params.append("page", "1");
+
+      const response = await api.post(API.GET_NOTIFICATIONS, params.toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
+
       if (response.data?.status) {
         setNotifications(response.data.data || []);
       }
     } catch (error) {
       console.error("Error loading notifications:", error);
+    }
+  };
+
+  const loadPlaces = async () => {
+    try {
+      const response = await api.post(API.GET_PLACES, {
+        page: 1,
+        perPage: 100
+      });
+      if (response.data?.status) {
+        setPlaces(response.data.data || []);
+      }
+    } catch (error) {
+      console.error("Error loading places:", error);
     }
   };
 
@@ -294,13 +340,18 @@ export default function GuiderDashboard({ navigation }) {
     setRefreshing(false);
   }, []);
 
-  // ✅ POST: Change Active Status
+  // ============ ACTIONS ============
+
   const toggleStatus = async () => {
     try {
-      const response = await api.post(API.CHANGE_GUIDER_ACTIVE_STATUS, {
-        guiderId: user?.id,
-        active: !isActive
+      const params = new URLSearchParams();
+      params.append("guiderId", profile.id.toString());
+      params.append("active", (!isActive).toString());
+
+      const response = await api.post(API.CHANGE_GUIDER_ACTIVE_STATUS, params.toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
+
       if (response.data?.status) {
         setIsActive(!isActive);
         Alert.alert("Success", `Service ${!isActive ? 'activated' : 'deactivated'} successfully`);
@@ -311,14 +362,17 @@ export default function GuiderDashboard({ navigation }) {
     }
   };
 
-  // ✅ POST: Respond to Appointment
   const respondBooking = async (id, status, note = "") => {
     try {
-      const response = await api.post(API.RESPOND_APPOINTMENT, {
-        appointmentId: id,
-        status: status,
-        note: note
+      const params = new URLSearchParams();
+      params.append("appointmentId", id.toString());
+      params.append("status", status);
+      if (note) params.append("note", note);
+
+      const response = await api.post(API.RESPOND_APPOINTMENT, params.toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
+
       if (response.data?.status) {
         Alert.alert("Success", `Booking ${status.toLowerCase()} successfully`);
         loadBookings();
@@ -329,7 +383,6 @@ export default function GuiderDashboard({ navigation }) {
     }
   };
 
-  // ✅ Handle reject booking
   const handleRejectBooking = async () => {
     if (!rejectionReason.trim()) {
       Alert.alert("Error", "Please provide a reason for rejection");
@@ -340,17 +393,20 @@ export default function GuiderDashboard({ navigation }) {
     setRejectionReason("");
   };
 
-  // ✅ POST: Complete Appointment with OTP
   const handleCompleteBooking = async () => {
     if (!otpCode.trim()) {
       Alert.alert("Error", "Please enter OTP");
       return;
     }
     try {
-      const response = await api.post("/appointment/complete", {
-        appointmentId: selectedBooking?.id,
-        otp: otpCode
+      const params = new URLSearchParams();
+      params.append("appointmentId", selectedBooking?.id.toString());
+      params.append("otp", otpCode);
+
+      const response = await api.post("/appointment/complete", params.toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
+
       if (response.data?.status) {
         Alert.alert("Success", "Service completed successfully");
         setOtpModal(false);
@@ -366,7 +422,6 @@ export default function GuiderDashboard({ navigation }) {
     }
   };
 
-  // ✅ POST: Save Service (Create/Update)
   const handleSaveService = async () => {
     if (!serviceForm.title.trim()) {
       Alert.alert("Error", "Service title is required");
@@ -411,7 +466,6 @@ export default function GuiderDashboard({ navigation }) {
     }
   };
 
-  // ✅ POST: Delete Service
   const handleDeleteService = async (serviceId) => {
     Alert.alert(
       "Delete Service",
@@ -423,7 +477,13 @@ export default function GuiderDashboard({ navigation }) {
           style: "destructive",
           onPress: async () => {
             try {
-              const response = await api.post(API.DELETE_SERVICE, { serviceId });
+              const params = new URLSearchParams();
+              params.append("serviceId", serviceId.toString());
+
+              const response = await api.post(API.DELETE_SERVICE, params.toString(), {
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+              });
+
               if (response.data?.status) {
                 Alert.alert("Success", "Service deleted successfully");
                 loadServices();
@@ -438,7 +498,6 @@ export default function GuiderDashboard({ navigation }) {
     );
   };
 
-  // ✅ POST: Upload Gallery Images
   const uploadGalleryImages = async () => {
     if (selectedImages.length === 0) {
       Alert.alert("Error", "Please select images to upload");
@@ -471,7 +530,6 @@ export default function GuiderDashboard({ navigation }) {
     }
   };
 
-  // ✅ POST: Delete Image
   const handleDeleteImage = async (imageId) => {
     Alert.alert(
       "Delete Image",
@@ -483,7 +541,13 @@ export default function GuiderDashboard({ navigation }) {
           style: "destructive",
           onPress: async () => {
             try {
-              const response = await api.post(API.DELETE_IMAGE, { imageId });
+              const params = new URLSearchParams();
+              params.append("imageId", imageId.toString());
+
+              const response = await api.post(API.DELETE_IMAGE, params.toString(), {
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+              });
+
               if (response.data?.status) {
                 Alert.alert("Success", "Image deleted successfully");
                 loadGallery();
@@ -498,65 +562,90 @@ export default function GuiderDashboard({ navigation }) {
     );
   };
 
-  // ✅ POST: Create Withdrawal
   const handleWithdrawal = async () => {
+  try {
+
+    const guiderId = profile?.id || user?.id;
+
+    if (!guiderId) {
+      Alert.alert("Error", "Guider ID not found");
+      return;
+    }
+
     if (!withdrawalAmount || parseFloat(withdrawalAmount) <= 0) {
       Alert.alert("Error", "Please enter valid amount");
       return;
     }
 
     const amount = parseFloat(withdrawalAmount);
-    if (amount > wallet - pendingWithdrawal) {
-      Alert.alert("Error", "Insufficient balance");
-      return;
-    }
 
-    if (!bankDetails.accountNumber && !bankDetails.upiId) {
-      Alert.alert("Error", "Please provide bank account or UPI details");
-      return;
-    }
+    const params = new URLSearchParams();
+    params.append("guiderId", guiderId.toString());
+    params.append("amount", amount.toString());
+    params.append("charge", "0");
+    params.append("amountToBeSettled", amount.toString());
+    params.append("paymentToken", `WD_${Date.now()}`);
 
-    try {
-      const response = await api.post(API.CREATE_WITHDRAWAL, {
-        guiderId: user?.id,
-        amount: amount,
-        amountToBeSettled: amount,
-        charge: 0,
-        paymentToken: `WD_${Date.now()}`,
-        bankName: bankDetails.bankName,
-        accountNumber: bankDetails.accountNumber,
-        accountHolderName: bankDetails.accountHolderName,
-        ifsc: bankDetails.ifsc,
-        upiId: bankDetails.upiId,
-      });
+    if (bankDetails.bankName)
+      params.append("bankName", bankDetails.bankName);
 
-      if (response.data?.status) {
-        Alert.alert("Success", "Withdrawal request submitted successfully");
-        setWithdrawalModal(false);
-        setWithdrawalAmount("");
-        loadWithdrawals();
-        loadTransactions();
+    if (bankDetails.accountNumber)
+      params.append("accountNumber", bankDetails.accountNumber);
+
+    if (bankDetails.accountHolderName)
+      params.append("accountHolderName", bankDetails.accountHolderName);
+
+    if (bankDetails.ifsc)
+      params.append("ifsc", bankDetails.ifsc);
+
+    if (bankDetails.upiId)
+      params.append("upiId", bankDetails.upiId);
+
+    const response = await api.post(
+      API.CREATE_WITHDRAWAL,
+      params.toString(),
+      {
+        headers: { "Content-Type": "application/x-www-form-urlencoded" }
       }
-    } catch (error) {
-      console.error("Withdrawal error:", error);
-      Alert.alert("Error", "Failed to submit withdrawal request");
-    }
-  };
+    );
 
-  // ✅ POST: Update Profile
+    if (response.data?.status) {
+
+      Alert.alert("Success", "Withdrawal request submitted");
+
+      setWithdrawalModal(false);
+      setWithdrawalAmount("");
+
+      loadWithdrawals();
+
+    } else {
+
+      Alert.alert("Error", response.data?.message || "Withdrawal failed");
+
+    }
+
+  } catch (error) {
+    console.error("Withdrawal error:", error);
+    Alert.alert("Error", "Failed to submit withdrawal");
+  }
+};
+
   const handleUpdateProfile = async () => {
     try {
       const placeIds = selectedPlaces.map(p => p.id).join(',');
 
-      const response = await api.post(API.UPDATE_GUIDER, {
-        guiderId: user?.id,
-        firmName: editForm.firmName,
-        email: editForm.email,
-        phone: editForm.phone,
-        address: editForm.address,
-        description: editForm.description,
-        placeId: selectedPlaces[0]?.id || editForm.placeId,
-        places: placeIds || editForm.places,
+      const params = new URLSearchParams();
+      params.append("guiderId", profile.id.toString());
+      if (editForm.firmName) params.append("firmName", editForm.firmName);
+      if (editForm.email) params.append("email", editForm.email);
+      if (editForm.phone) params.append("phone", editForm.phone);
+      if (editForm.address) params.append("address", editForm.address);
+      if (editForm.description) params.append("description", editForm.description);
+      if (selectedPlaces[0]?.id) params.append("placeId", selectedPlaces[0].id.toString());
+      if (placeIds) params.append("places", placeIds);
+
+      const response = await api.post(API.UPDATE_GUIDER, params.toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
 
       if (response.data?.status) {
@@ -570,7 +659,6 @@ export default function GuiderDashboard({ navigation }) {
     }
   };
 
-  // ✅ Handle Logout
   const handleLogout = async () => {
     Alert.alert(
       "Logout",
@@ -589,8 +677,41 @@ export default function GuiderDashboard({ navigation }) {
     );
   };
 
+  const getWithdrawalStatusColor = (status) => {
+  switch (status) {
+    case "Success":
+      return "#10B981";
+    case "In Progress":
+      return "#F59E0B";
+    case "Canceled":
+      return "#EF4444";
+    default:
+      return "#64748b";
+  }
+};
+
+const getWithdrawalStatusBg = (status) => {
+  switch (status) {
+    case "Success":
+      return "#D1FAE5";
+    case "In Progress":
+      return "#FEF3C7";
+    case "Canceled":
+      return "#FEE2E2";
+    default:
+      return "#F3F4F6";
+  }
+};
+
   const pickServiceImage = async () => {
     try {
+      if (!mediaLibraryPermission?.granted) {
+        const { status } = await requestMediaLibraryPermission();
+        if (status !== 'granted') {
+          Alert.alert('Permission needed', 'Please allow access to your photo library.');
+          return;
+        }
+      }
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
@@ -609,11 +730,19 @@ export default function GuiderDashboard({ navigation }) {
       }
     } catch (error) {
       console.error("Image picker error:", error);
+      Alert.alert("Error", "Failed to pick image. Please try again.");
     }
   };
 
   const pickGalleryImages = async () => {
     try {
+      if (!mediaLibraryPermission?.granted) {
+        const { status } = await requestMediaLibraryPermission();
+        if (status !== 'granted') {
+          Alert.alert('Permission needed', 'Please allow access to your photo library.');
+          return;
+        }
+      }
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsMultipleSelection: true,
@@ -624,6 +753,7 @@ export default function GuiderDashboard({ navigation }) {
       }
     } catch (error) {
       console.error("Gallery picker error:", error);
+      Alert.alert("Error", "Failed to pick images. Please try again.");
     }
   };
 
@@ -637,6 +767,19 @@ export default function GuiderDashboard({ navigation }) {
     });
   };
 
+  const getImageUrl = (path) => {
+    if (!path) return null;
+    if (typeof path !== 'string') return null;
+    if (path.startsWith("http")) return path;
+    try {
+      const filename = path.split("/").pop();
+      return `${BASE_URL}/api/image/download/${filename}`;
+    } catch (error) {
+      console.error("Error parsing image path:", error);
+      return null;
+    }
+  };
+
   const formatCurrency = (amount) => {
     return `₹${amount?.toLocaleString() || 0}`;
   };
@@ -647,7 +790,7 @@ export default function GuiderDashboard({ navigation }) {
       case 'ACCEPTED': return '#3B82F6';
       case 'REQUESTED': return '#F59E0B';
       case 'REJECTED': return '#EF4444';
-      case 'CANCELLED': return '#6B7280';
+      case 'CANCELED': return '#6B7280';
       default: return '#6B7280';
     }
   };
@@ -658,12 +801,11 @@ export default function GuiderDashboard({ navigation }) {
       case 'ACCEPTED': return '#DBEAFE';
       case 'REQUESTED': return '#FEF3C7';
       case 'REJECTED': return '#FEE2E2';
-      case 'CANCELLED': return '#F3F4F6';
+      case 'CANCELED': return '#F3F4F6';
       default: return '#F3F4F6';
     }
   };
 
-  // Toggle place selection (max 3)
   const togglePlace = (place) => {
     if (selectedPlaces.some(p => p.id === place.id)) {
       setSelectedPlaces(selectedPlaces.filter(p => p.id !== place.id));
@@ -977,9 +1119,9 @@ export default function GuiderDashboard({ navigation }) {
           </View>
           <View style={styles.bookingItemRight}>
             <Text style={styles.bookingAmount}>{formatCurrency(item.amount)}</Text>
-            <View style={[styles.bookingStatusBadge, { backgroundColor: getStatusBg(item.status) }]}>
+            <View style={[styles.bookingStatusBadge, { backgroundColor: getWithdrawalStatusBg(item.paymentStatus) }]}>
               <Text style={[styles.bookingStatusBadgeText, { color: getStatusColor(item.status) }]}>
-                {item.status}
+               {item.paymentStatus}
               </Text>
             </View>
           </View>
@@ -1177,7 +1319,7 @@ export default function GuiderDashboard({ navigation }) {
             <Text style={styles.bookingAmount}>{formatCurrency(item.amount)}</Text>
             <View style={[styles.bookingStatusBadge, { backgroundColor: getStatusBg(item.status) }]}>
               <Text style={[styles.bookingStatusBadgeText, { color: getStatusColor(item.status) }]}>
-                {item.status}
+               {item.paymentStatus}
               </Text>
             </View>
           </View>
@@ -1276,7 +1418,7 @@ export default function GuiderDashboard({ navigation }) {
               <Text style={styles.transactionDebit}>-{formatCurrency(item.amount)}</Text>
               <View style={[styles.statusBadge, { backgroundColor: getStatusBg(item.status) }]}>
                 <Text style={[styles.statusBadgeText, { color: getStatusColor(item.status) }]}>
-                  {item.status}
+                {item.paymentStatus}
                 </Text>
               </View>
             </View>
@@ -1309,7 +1451,11 @@ export default function GuiderDashboard({ navigation }) {
       }}
     >
       <BlurView intensity={20} style={StyleSheet.absoluteFill} />
-      <View style={styles.modalContainer}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.modalContainer}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
+      >
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>
@@ -1326,7 +1472,10 @@ export default function GuiderDashboard({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
             <TouchableOpacity
               style={styles.modalImagePicker}
               onPress={pickServiceImage}
@@ -1404,7 +1553,7 @@ export default function GuiderDashboard({ navigation }) {
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 
@@ -1419,7 +1568,11 @@ export default function GuiderDashboard({ navigation }) {
       }}
     >
       <BlurView intensity={20} style={StyleSheet.absoluteFill} />
-      <View style={styles.modalContainer}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.modalContainer}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
+      >
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Upload to Gallery</Text>
@@ -1436,7 +1589,9 @@ export default function GuiderDashboard({ navigation }) {
 
           {selectedImages.length > 0 ? (
             <>
-              <ScrollView>
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+              >
                 <View style={styles.selectedImagesGrid}>
                   {selectedImages.map((image, index) => (
                     <View key={index} style={styles.selectedImageItem}>
@@ -1500,7 +1655,7 @@ export default function GuiderDashboard({ navigation }) {
             </View>
           )}
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 
@@ -1515,7 +1670,11 @@ export default function GuiderDashboard({ navigation }) {
       }}
     >
       <BlurView intensity={20} style={StyleSheet.absoluteFill} />
-      <View style={styles.modalContainer}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.modalContainer}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
+      >
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Withdraw Funds</Text>
@@ -1530,7 +1689,10 @@ export default function GuiderDashboard({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
             <View style={styles.balancePreview}>
               <Text style={styles.balancePreviewLabel}>Available Balance</Text>
               <Text style={styles.balancePreviewAmount}>
@@ -1635,7 +1797,7 @@ export default function GuiderDashboard({ navigation }) {
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 
@@ -1647,7 +1809,11 @@ export default function GuiderDashboard({ navigation }) {
       onRequestClose={() => setBookingModal(false)}
     >
       <BlurView intensity={20} style={StyleSheet.absoluteFill} />
-      <View style={styles.modalContainer}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.modalContainer}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
+      >
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Booking Details</Text>
@@ -1660,7 +1826,7 @@ export default function GuiderDashboard({ navigation }) {
           </View>
 
           {selectedBooking && (
-            <ScrollView>
+            <ScrollView keyboardShouldPersistTaps="handled">
               <View style={styles.bookingDetailSection}>
                 <View style={styles.bookingDetailRow}>
                   <Text style={styles.bookingDetailLabel}>Tourist Name</Text>
@@ -1733,7 +1899,7 @@ export default function GuiderDashboard({ navigation }) {
                 )}
               </View>
 
-              {selectedBooking.status === 'PENDING' && (
+              {selectedBooking.status?.toUpperCase() === 'REQUESTED' && (
                 <View style={styles.modalActions}>
                   <TouchableOpacity
                     style={styles.acceptModalBtn}
@@ -1770,7 +1936,7 @@ export default function GuiderDashboard({ navigation }) {
             </ScrollView>
           )}
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 
@@ -1785,7 +1951,11 @@ export default function GuiderDashboard({ navigation }) {
       }}
     >
       <BlurView intensity={20} style={StyleSheet.absoluteFill} />
-      <View style={styles.modalContainer}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.modalContainer}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
+      >
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Reject Booking</Text>
@@ -1800,28 +1970,30 @@ export default function GuiderDashboard({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.warningContainer}>
-            <Ionicons name="alert-circle" size={32} color="#EF4444" />
-            <Text style={styles.warningTitle}>Are you sure?</Text>
-            <Text style={styles.warningText}>
-              Rejecting bookings will affect your acceptance rate and ranking.
-              Only reject if absolutely necessary.
-            </Text>
-          </View>
+          <ScrollView keyboardShouldPersistTaps="handled">
+            <View style={styles.warningContainer}>
+              <Ionicons name="alert-circle" size={32} color="#EF4444" />
+              <Text style={styles.warningTitle}>Are you sure?</Text>
+              <Text style={styles.warningText}>
+                Rejecting bookings will affect your acceptance rate and ranking.
+                Only reject if absolutely necessary.
+              </Text>
+            </View>
 
-          <View style={styles.modalFormGroup}>
-            <Text style={styles.modalLabel}>Reason for Rejection</Text>
-            <TextInput
-              style={[styles.modalInput, styles.modalTextArea]}
-              placeholder="Please explain why you cannot accept this booking"
-              placeholderTextColor="#94a3b8"
-              value={rejectionReason}
-              onChangeText={setRejectionReason}
-              multiline
-              numberOfLines={4}
-              textAlignVertical="top"
-            />
-          </View>
+            <View style={styles.modalFormGroup}>
+              <Text style={styles.modalLabel}>Reason for Rejection</Text>
+              <TextInput
+                style={[styles.modalInput, styles.modalTextArea]}
+                placeholder="Please explain why you cannot accept this booking"
+                placeholderTextColor="#94a3b8"
+                value={rejectionReason}
+                onChangeText={setRejectionReason}
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+              />
+            </View>
+          </ScrollView>
 
           <View style={styles.modalFooter}>
             <TouchableOpacity
@@ -1841,7 +2013,7 @@ export default function GuiderDashboard({ navigation }) {
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 
@@ -1856,7 +2028,11 @@ export default function GuiderDashboard({ navigation }) {
       }}
     >
       <BlurView intensity={20} style={StyleSheet.absoluteFill} />
-      <View style={styles.modalContainer}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.modalContainer}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
+      >
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Complete Tour</Text>
@@ -1871,38 +2047,40 @@ export default function GuiderDashboard({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.otpContainer}>
-            <View style={styles.otpIconContainer}>
-              <Ionicons name="shield-checkmark" size={64} color="#10B981" />
+          <ScrollView keyboardShouldPersistTaps="handled">
+            <View style={styles.otpContainer}>
+              <View style={styles.otpIconContainer}>
+                <Ionicons name="shield-checkmark" size={64} color="#10B981" />
+              </View>
+              <Text style={styles.otpTitle}>Enter OTP</Text>
+              <Text style={styles.otpText}>
+                Ask the tourist to share the 6-digit OTP sent to their registered mobile number
+              </Text>
+
+              <TextInput
+                style={styles.otpInput}
+                value={otpCode}
+                onChangeText={setOtpCode}
+                placeholder="Enter 6-digit OTP"
+                placeholderTextColor="#94a3b8"
+                keyboardType="numeric"
+                maxLength={6}
+              />
+
+              <TouchableOpacity
+                style={styles.verifyBtn}
+                onPress={handleCompleteBooking}
+              >
+                <Text style={styles.verifyBtnText}>Verify & Complete</Text>
+              </TouchableOpacity>
+
+              <Text style={styles.otpNote}>
+                Payment will be released to your wallet after successful verification
+              </Text>
             </View>
-            <Text style={styles.otpTitle}>Enter OTP</Text>
-            <Text style={styles.otpText}>
-              Ask the tourist to share the 6-digit OTP sent to their registered mobile number
-            </Text>
-
-            <TextInput
-              style={styles.otpInput}
-              value={otpCode}
-              onChangeText={setOtpCode}
-              placeholder="Enter 6-digit OTP"
-              placeholderTextColor="#94a3b8"
-              keyboardType="numeric"
-              maxLength={6}
-            />
-
-            <TouchableOpacity
-              style={styles.verifyBtn}
-              onPress={handleCompleteBooking}
-            >
-              <Text style={styles.verifyBtnText}>Verify & Complete</Text>
-            </TouchableOpacity>
-
-            <Text style={styles.otpNote}>
-              Payment will be released to your wallet after successful verification
-            </Text>
-          </View>
+          </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 
@@ -1914,7 +2092,11 @@ export default function GuiderDashboard({ navigation }) {
       onRequestClose={() => setEditProfileModal(false)}
     >
       <BlurView intensity={20} style={StyleSheet.absoluteFill} />
-      <View style={styles.modalContainer}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.modalContainer}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
+      >
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Edit Profile</Text>
@@ -1926,7 +2108,10 @@ export default function GuiderDashboard({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
             <View style={styles.modalFormGroup}>
               <Text style={styles.modalLabel}>Firm/Agency Name</Text>
               <TextInput
@@ -2032,7 +2217,7 @@ export default function GuiderDashboard({ navigation }) {
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 
@@ -2110,1096 +2295,196 @@ export default function GuiderDashboard({ navigation }) {
   );
 }
 
+// Styles (same as your original – unchanged)
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-  },
-  loadingContainer: {
-    flex: 1,
-  },
-  loadingGradient: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#fff',
-    fontWeight: '500',
-  },
-  headerGradient: {
-    paddingTop: 10,
-    paddingBottom: 20,
-    paddingHorizontal: 20,
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-  },
-  headerContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 10,
-    paddingTop: 20
-  },
-  headerLeft: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  menuIcon: {
-    marginRight: 15,
-    padding: 5,
-  },
-  headerTextContainer: {
-    flex: 1,
-  },
-  headerGreeting: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.9)',
-    marginBottom: 2,
-  },
-  headerName: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  notificationBtn: {
-    padding: 8,
-    marginRight: 12,
-    position: 'relative',
-  },
-  notificationBadge: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-    backgroundColor: '#EF4444',
-    borderRadius: 10,
-    minWidth: 18,
-    height: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  notificationCount: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  profileBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.3)',
-  },
-  headerProfileImage: {
-    width: '100%',
-    height: '100%',
-  },
-  headerProfilePlaceholder: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerProfileInitial: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  verificationContainer: {
-    marginTop: 15,
-  },
-  verificationBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    alignSelf: 'flex-start',
-  },
-  verificationText: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginLeft: 6,
-  },
-  tabBarContainer: {
-    backgroundColor: '#fff',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-  },
-  tabBarScroll: {
-    paddingHorizontal: 16,
-  },
-  tabItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    marginRight: 8,
-    borderRadius: 20,
-    backgroundColor: '#f8fafc',
-  },
-  activeTabItem: {
-    backgroundColor: '#e6f0f5',
-  },
-  tabLabel: {
-    fontSize: 14,
-    color: '#64748b',
-    marginLeft: 6,
-    fontWeight: '500',
-  },
-  activeTabLabel: {
-    color: '#2c5a73',
-    fontWeight: '600',
-  },
-  scrollContent: {
-    flex: 1,
-  },
-  dashboardContent: {
-    padding: 16,
-  },
-  walletCard: {
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 16,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-  },
-  walletHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  walletTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  walletTitle: {
-    fontSize: 16,
-    color: '#fff',
-    marginLeft: 8,
-    opacity: 0.9,
-  },
-  withdrawBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  withdrawBtnText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-    marginRight: 4,
-  },
-  walletAmount: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 16,
-  },
-  walletFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.2)',
-  },
-  walletStat: {
-    flex: 1,
-  },
-  walletStatLabel: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.8)',
-    marginBottom: 4,
-  },
-  walletStatValue: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  walletDivider: {
-    width: 1,
-    height: 30,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    marginHorizontal: 16,
-  },
-  statusCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  statusContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  statusInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  statusIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#f8fafc',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  statusTextContainer: {
-    flex: 1,
-  },
-  statusTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1e293b',
-    marginBottom: 4,
-  },
-  statusSubtitle: {
-    fontSize: 12,
-    color: '#64748b',
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginHorizontal: -4,
-    marginBottom: 16,
-  },
-  statCard: {
-    width: '50%',
-    paddingHorizontal: 4,
-    marginBottom: 8,
-  },
-  statIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1e293b',
-    marginBottom: 2,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#64748b',
-  },
-  quickActionsCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1e293b',
-    marginBottom: 16,
-  },
-  quickActionsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  quickAction: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  quickActionGradient: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  quickActionLabel: {
-    fontSize: 12,
-    color: '#64748b',
-    textAlign: 'center',
-  },
-  sectionCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  sectionTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1e293b',
-    marginLeft: 8,
-  },
-  viewAllText: {
-    fontSize: 14,
-    color: '#2c5a73',
-    fontWeight: '600',
-  },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2c5a73',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  addButtonText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-    marginLeft: 4,
-  },
-  bookingItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
-  },
-  bookingItemLeft: {
-    flexDirection: 'row',
-    flex: 1,
-  },
-  bookingStatusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginTop: 6,
-    marginRight: 12,
-  },
-  bookingItemContent: {
-    flex: 1,
-  },
-  bookingServiceTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1e293b',
-    marginBottom: 4,
-  },
-  bookingMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  bookingMetaText: {
-    fontSize: 11,
-    color: '#64748b',
-    marginLeft: 4,
-  },
-  bookingMetaDot: {
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: '#cbd5e1',
-    marginHorizontal: 8,
-  },
-  bookingItemRight: {
-    alignItems: 'flex-end',
-  },
-  bookingAmount: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1e293b',
-    marginBottom: 4,
-  },
-  bookingStatusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 12,
-  },
-  bookingStatusBadgeText: {
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  serviceItem: {
-    flexDirection: 'row',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
-  },
-  serviceItemImage: {
-    width: 70,
-    height: 70,
-    borderRadius: 8,
-    marginRight: 12,
-  },
-  serviceItemContent: {
-    flex: 1,
-  },
-  serviceItemHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  serviceItemTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#1e293b',
-    flex: 1,
-  },
-  serviceItemPrice: {
-    fontSize: 15,
-    fontWeight: 'bold',
-    color: '#2c5a73',
-  },
-  serviceItemDesc: {
-    fontSize: 12,
-    color: '#64748b',
-    lineHeight: 18,
-    marginBottom: 8,
-  },
-  serviceItemFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  serviceItemStats: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  serviceItemStatsText: {
-    fontSize: 11,
-    color: '#64748b',
-    marginLeft: 4,
-  },
-  serviceItemActions: {
-    flexDirection: 'row',
-  },
-  serviceEditBtn: {
-    padding: 6,
-    marginRight: 8,
-  },
-  serviceDeleteBtn: {
-    padding: 6,
-  },
-  galleryItem: {
-    flex: 1,
-    aspectRatio: 1,
-    margin: 4,
-    borderRadius: 8,
-    overflow: 'hidden',
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-  },
-  galleryItemImage: {
-    width: '100%',
-    height: '100%',
-  },
-  earningsCard: {
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 16,
-    marginHorizontal: 16,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-  },
-  earningsLabel: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.9)',
-    marginBottom: 8,
-  },
-  earningsAmount: {
-    fontSize: 36,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 20,
-  },
-  earningsStats: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.2)',
-  },
-  earningsStat: {
-    flex: 1,
-  },
-  earningsStatLabel: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.8)',
-    marginBottom: 4,
-  },
-  earningsStatValue: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  earningsDivider: {
-    width: 1,
-    height: 30,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    marginHorizontal: 16,
-  },
-  transactionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
-  },
-  transactionIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  transactionInfo: {
-    flex: 1,
-  },
-  transactionTitle: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#1e293b',
-    marginBottom: 2,
-  },
-  transactionDate: {
-    fontSize: 11,
-    color: '#64748b',
-  },
-  transactionCredit: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#10B981',
-  },
-  transactionDebit: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#EF4444',
-  },
-  transactionRight: {
-    alignItems: 'flex-end',
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 12,
-    marginTop: 4,
-  },
-  statusBadgeText: {
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 32,
-  },
-  emptyStateTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1e293b',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyStateText: {
-    fontSize: 14,
-    color: '#64748b',
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  emptyStateButton: {
-    backgroundColor: '#2c5a73',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
-  },
-  emptyStateButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  bottomSpace: {
-    height: 20,
-  },
-  modalContainer: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    maxHeight: '90%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1e293b',
-  },
-  modalCloseBtn: {
-    padding: 4,
-  },
-  modalImagePicker: {
-    width: '100%',
-    height: 180,
-    backgroundColor: '#f8fafc',
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#e2e8f0',
-    borderStyle: 'dashed',
-    marginBottom: 20,
-    overflow: 'hidden',
-  },
-  modalPreviewImage: {
-    width: '100%',
-    height: '100%',
-  },
-  modalImagePlaceholder: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalImageText: {
-    marginTop: 12,
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1e293b',
-  },
-  modalImageSubtext: {
-    marginTop: 4,
-    fontSize: 12,
-    color: '#64748b',
-  },
-  modalFormGroup: {
-    marginBottom: 16,
-  },
-  modalLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#1e293b',
-    marginBottom: 6,
-  },
-  modalInput: {
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 14,
-    color: '#1e293b',
-  },
-  modalTextArea: {
-    minHeight: 100,
-    textAlignVertical: 'top',
-  },
-  hintText: {
-    fontSize: 11,
-    color: '#64748b',
-    marginTop: 4,
-    fontStyle: 'italic',
-  },
-  modalFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 20,
-  },
-  modalCancelBtn: {
-    flex: 1,
-    paddingVertical: 14,
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  modalCancelText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#64748b',
-  },
-  modalSaveBtn: {
-    flex: 1,
-    paddingVertical: 14,
-    marginLeft: 8,
-    backgroundColor: '#2c5a73',
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  modalSaveText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  selectedImagesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginHorizontal: -4,
-  },
-  selectedImageItem: {
-    width: '33.33%',
-    aspectRatio: 1,
-    padding: 4,
-    position: 'relative',
-  },
-  selectedImage: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 8,
-  },
-  removeImageBtn: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-  },
-  addMoreBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    marginTop: 16,
-    borderWidth: 1,
-    borderColor: '#2c5a73',
-    borderRadius: 8,
-    borderStyle: 'dashed',
-  },
-  addMoreText: {
-    color: '#2c5a73',
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  uploadPrompt: {
-    alignItems: 'center',
-    paddingVertical: 32,
-  },
-  uploadTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1e293b',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  uploadText: {
-    fontSize: 14,
-    color: '#64748b',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  uploadBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2c5a73',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  uploadBtnText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  uploadTip: {
-    fontSize: 12,
-    color: '#64748b',
-    marginTop: 16,
-    fontStyle: 'italic',
-  },
-  balancePreview: {
-    backgroundColor: '#f8fafc',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 20,
-    alignItems: 'center',
-  },
-  balancePreviewLabel: {
-    fontSize: 14,
-    color: '#64748b',
-    marginBottom: 8,
-  },
-  balancePreviewAmount: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1e293b',
-  },
-  sectionSubtitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1e293b',
-    marginBottom: 12,
-  },
-  row: {
-    flexDirection: 'row',
-  },
-  noteBox: {
-    flexDirection: 'row',
-    backgroundColor: '#eff6ff',
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 16,
-    alignItems: 'center',
-  },
-  noteText: {
-    flex: 1,
-    fontSize: 12,
-    color: '#1e293b',
-    marginLeft: 8,
-    lineHeight: 18,
-  },
-  bookingDetailSection: {
-    marginBottom: 20,
-  },
-  bookingDetailRow: {
-    marginBottom: 16,
-  },
-  bookingDetailLabel: {
-    fontSize: 12,
-    color: '#64748b',
-    marginBottom: 4,
-  },
-  bookingDetailValue: {
-    fontSize: 15,
-    color: '#1e293b',
-    fontWeight: '500',
-  },
-  contactRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  callBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#10B981',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  callBtnText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 6,
-  },
-  ratingDisplay: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  ratingValue: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#F59E0B',
-    marginLeft: 4,
-  },
-  feedbackText: {
-    fontSize: 14,
-    color: '#64748b',
-    fontStyle: 'italic',
-    marginTop: 4,
-  },
-  modalActions: {
-    flexDirection: 'row',
-    marginTop: 20,
-  },
-  acceptModalBtn: {
-    flex: 1,
-    backgroundColor: '#10B981',
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  acceptModalBtnText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  rejectModalBtn: {
-    flex: 1,
-    backgroundColor: '#fff',
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginLeft: 8,
-    borderWidth: 1,
-    borderColor: '#EF4444',
-  },
-  rejectModalBtnText: {
-    color: '#EF4444',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  completeModalBtn: {
-    backgroundColor: '#10B981',
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  completeModalBtnText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  warningContainer: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  warningTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1e293b',
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  warningText: {
-    fontSize: 14,
-    color: '#64748b',
-    textAlign: 'center',
-  },
-  otpContainer: {
-    alignItems: 'center',
-    paddingVertical: 20,
-  },
-  otpIconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#D1FAE5',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  otpTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1e293b',
-    marginBottom: 8,
-  },
-  otpText: {
-    fontSize: 14,
-    color: '#64748b',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  otpInput: {
-    width: '100%',
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 8,
-    padding: 16,
-    fontSize: 20,
-    textAlign: 'center',
-    letterSpacing: 8,
-    marginBottom: 16,
-    color: '#1e293b',
-  },
-  verifyBtn: {
-    width: '100%',
-    backgroundColor: '#10B981',
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  verifyBtnText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  otpNote: {
-    fontSize: 12,
-    color: '#64748b',
-    textAlign: 'center',
-    marginTop: 16,
-    fontStyle: 'italic',
-  },
-  placesScroll: {
-    flexDirection: 'row',
-    marginBottom: 8,
-  },
-  placeChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: '#f8fafc',
-    borderRadius: 20,
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  placeChipSelected: {
-    backgroundColor: '#2c5a73',
-    borderColor: '#2c5a73',
-  },
-  placeChipText: {
-    fontSize: 12,
-    color: '#64748b',
-  },
-  placeChipTextSelected: {
-    color: '#fff',
-  },
+  container: { flex: 1, backgroundColor: '#f8fafc' },
+  loadingContainer: { flex: 1 },
+  loadingGradient: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 12, fontSize: 16, color: '#fff', fontWeight: '500' },
+  headerGradient: { paddingTop: 10, paddingBottom: 20, paddingHorizontal: 20, borderBottomLeftRadius: 30, borderBottomRightRadius: 30 },
+  headerContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, paddingTop: 20 },
+  headerLeft: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+  menuIcon: { marginRight: 15, padding: 5 },
+  headerTextContainer: { flex: 1 },
+  headerGreeting: { fontSize: 14, color: 'rgba(255,255,255,0.9)', marginBottom: 2 },
+  headerName: { fontSize: 20, fontWeight: 'bold', color: '#fff' },
+  headerRight: { flexDirection: 'row', alignItems: 'center' },
+  notificationBtn: { padding: 8, marginRight: 12, position: 'relative' },
+  notificationBadge: { position: 'absolute', top: 4, right: 4, backgroundColor: '#EF4444', borderRadius: 10, minWidth: 18, height: 18, justifyContent: 'center', alignItems: 'center' },
+  notificationCount: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
+  profileBtn: { width: 44, height: 44, borderRadius: 22, overflow: 'hidden', borderWidth: 2, borderColor: 'rgba(255,255,255,0.3)' },
+  headerProfileImage: { width: '100%', height: '100%' },
+  headerProfilePlaceholder: { width: '100%', height: '100%', backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
+  headerProfileInitial: { fontSize: 20, fontWeight: 'bold', color: '#fff' },
+  verificationContainer: { marginTop: 15 },
+  verificationBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, alignSelf: 'flex-start' },
+  verificationText: { fontSize: 12, fontWeight: '600', marginLeft: 6 },
+  tabBarContainer: { backgroundColor: '#fff', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#e2e8f0', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4 },
+  tabBarScroll: { paddingHorizontal: 16 },
+  tabItem: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, marginRight: 8, borderRadius: 20, backgroundColor: '#f8fafc' },
+  activeTabItem: { backgroundColor: '#e6f0f5' },
+  tabLabel: { fontSize: 14, color: '#64748b', marginLeft: 6, fontWeight: '500' },
+  activeTabLabel: { color: '#2c5a73', fontWeight: '600' },
+  scrollContent: { flex: 1 },
+  dashboardContent: { padding: 16 },
+  walletCard: { borderRadius: 20, padding: 20, marginBottom: 16, elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8 },
+  walletHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  walletTitleContainer: { flexDirection: 'row', alignItems: 'center' },
+  walletTitle: { fontSize: 16, color: '#fff', marginLeft: 8, opacity: 0.9 },
+  withdrawBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
+  withdrawBtnText: { color: '#fff', fontSize: 14, fontWeight: '600', marginRight: 4 },
+  walletAmount: { fontSize: 32, fontWeight: 'bold', color: '#fff', marginBottom: 16 },
+  walletFooter: { flexDirection: 'row', alignItems: 'center', paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.2)' },
+  walletStat: { flex: 1 },
+  walletStatLabel: { fontSize: 12, color: 'rgba(255,255,255,0.8)', marginBottom: 4 },
+  walletStatValue: { fontSize: 16, fontWeight: '600', color: '#fff' },
+  walletDivider: { width: 1, height: 30, backgroundColor: 'rgba(255,255,255,0.2)', marginHorizontal: 16 },
+  statusCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
+  statusContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  statusInfo: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  statusIconContainer: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#f8fafc', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  statusTextContainer: { flex: 1 },
+  statusTitle: { fontSize: 16, fontWeight: '600', color: '#1e293b', marginBottom: 4 },
+  statusSubtitle: { fontSize: 12, color: '#64748b' },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4, marginBottom: 16 },
+  statCard: { width: '50%', paddingHorizontal: 4, marginBottom: 8 },
+  statIconContainer: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
+  statValue: { fontSize: 20, fontWeight: 'bold', color: '#1e293b', marginBottom: 2 },
+  statLabel: { fontSize: 12, color: '#64748b' },
+  quickActionsCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
+  cardTitle: { fontSize: 16, fontWeight: '600', color: '#1e293b', marginBottom: 16 },
+  quickActionsGrid: { flexDirection: 'row', justifyContent: 'space-between' },
+  quickAction: { alignItems: 'center', flex: 1 },
+  quickActionGradient: { width: 56, height: 56, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginBottom: 8, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 },
+  quickActionLabel: { fontSize: 12, color: '#64748b', textAlign: 'center' },
+  sectionCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  sectionTitleContainer: { flexDirection: 'row', alignItems: 'center' },
+  sectionTitle: { fontSize: 16, fontWeight: '600', color: '#1e293b', marginLeft: 8 },
+  viewAllText: { fontSize: 14, color: '#2c5a73', fontWeight: '600' },
+  addButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#2c5a73', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+  addButtonText: { color: '#fff', fontSize: 12, fontWeight: '600', marginLeft: 4 },
+  bookingItem: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  bookingItemLeft: { flexDirection: 'row', flex: 1 },
+  bookingStatusDot: { width: 8, height: 8, borderRadius: 4, marginTop: 6, marginRight: 12 },
+  bookingItemContent: { flex: 1 },
+  bookingServiceTitle: { fontSize: 14, fontWeight: '600', color: '#1e293b', marginBottom: 4 },
+  bookingMeta: { flexDirection: 'row', alignItems: 'center' },
+  bookingMetaText: { fontSize: 11, color: '#64748b', marginLeft: 4 },
+  bookingMetaDot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: '#cbd5e1', marginHorizontal: 8 },
+  bookingItemRight: { alignItems: 'flex-end' },
+  bookingAmount: { fontSize: 14, fontWeight: '600', color: '#1e293b', marginBottom: 4 },
+  bookingStatusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 },
+  bookingStatusBadgeText: { fontSize: 10, fontWeight: '600' },
+  serviceItem: { flexDirection: 'row', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  serviceItemImage: { width: 70, height: 70, borderRadius: 8, marginRight: 12 },
+  serviceItemContent: { flex: 1 },
+  serviceItemHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  serviceItemTitle: { fontSize: 15, fontWeight: '600', color: '#1e293b', flex: 1 },
+  serviceItemPrice: { fontSize: 15, fontWeight: 'bold', color: '#2c5a73' },
+  serviceItemDesc: { fontSize: 12, color: '#64748b', lineHeight: 18, marginBottom: 8 },
+  serviceItemFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  serviceItemStats: { flexDirection: 'row', alignItems: 'center' },
+  serviceItemStatsText: { fontSize: 11, color: '#64748b', marginLeft: 4 },
+  serviceItemActions: { flexDirection: 'row' },
+  serviceEditBtn: { padding: 6, marginRight: 8 },
+  serviceDeleteBtn: { padding: 6 },
+  galleryItem: { flex: 1, aspectRatio: 1, margin: 4, borderRadius: 8, overflow: 'hidden', elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2 },
+  galleryItemImage: { width: '100%', height: '100%' },
+  earningsCard: { borderRadius: 20, padding: 20, marginBottom: 16, marginHorizontal: 16, elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8 },
+  earningsLabel: { fontSize: 14, color: 'rgba(255,255,255,0.9)', marginBottom: 8 },
+  earningsAmount: { fontSize: 36, fontWeight: 'bold', color: '#fff', marginBottom: 20 },
+  earningsStats: { flexDirection: 'row', alignItems: 'center', paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.2)' },
+  earningsStat: { flex: 1 },
+  earningsStatLabel: { fontSize: 12, color: 'rgba(255,255,255,0.8)', marginBottom: 4 },
+  earningsStatValue: { fontSize: 18, fontWeight: '600', color: '#fff' },
+  earningsDivider: { width: 1, height: 30, backgroundColor: 'rgba(255,255,255,0.2)', marginHorizontal: 16 },
+  transactionItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  transactionIcon: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  transactionInfo: { flex: 1 },
+  transactionTitle: { fontSize: 14, fontWeight: '500', color: '#1e293b', marginBottom: 2 },
+  transactionDate: { fontSize: 11, color: '#64748b' },
+  transactionCredit: { fontSize: 15, fontWeight: '600', color: '#10B981' },
+  transactionDebit: { fontSize: 15, fontWeight: '600', color: '#EF4444' },
+  transactionRight: { alignItems: 'flex-end' },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12, marginTop: 4 },
+  statusBadgeText: { fontSize: 10, fontWeight: '600' },
+  emptyState: { alignItems: 'center', paddingVertical: 32 },
+  emptyStateTitle: { fontSize: 16, fontWeight: '600', color: '#1e293b', marginTop: 16, marginBottom: 8 },
+  emptyStateText: { fontSize: 14, color: '#64748b', textAlign: 'center', marginBottom: 16 },
+  emptyStateButton: { backgroundColor: '#2c5a73', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 },
+  emptyStateButtonText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  bottomSpace: { height: 20 },
+  modalContainer: { flex: 1, justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '90%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#1e293b' },
+  modalCloseBtn: { padding: 4 },
+  modalImagePicker: { width: '100%', height: 180, backgroundColor: '#f8fafc', borderRadius: 12, borderWidth: 2, borderColor: '#e2e8f0', borderStyle: 'dashed', marginBottom: 20, overflow: 'hidden' },
+  modalPreviewImage: { width: '100%', height: '100%' },
+  modalImagePlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalImageText: { marginTop: 12, fontSize: 16, fontWeight: '600', color: '#1e293b' },
+  modalImageSubtext: { marginTop: 4, fontSize: 12, color: '#64748b' },
+  modalFormGroup: { marginBottom: 16 },
+  modalLabel: { fontSize: 14, fontWeight: '500', color: '#1e293b', marginBottom: 6 },
+  modalInput: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, padding: 12, fontSize: 14, color: '#1e293b' },
+  modalTextArea: { minHeight: 100, textAlignVertical: 'top' },
+  hintText: { fontSize: 11, color: '#64748b', marginTop: 4, fontStyle: 'italic' },
+  modalFooter: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 20 },
+  modalCancelBtn: { flex: 1, paddingVertical: 14, marginRight: 8, borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, alignItems: 'center' },
+  modalCancelText: { fontSize: 16, fontWeight: '500', color: '#64748b' },
+  modalSaveBtn: { flex: 1, paddingVertical: 14, marginLeft: 8, backgroundColor: '#2c5a73', borderRadius: 8, alignItems: 'center' },
+  modalSaveText: { fontSize: 16, fontWeight: '600', color: '#fff' },
+  selectedImagesGrid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4 },
+  selectedImageItem: { width: '33.33%', aspectRatio: 1, padding: 4, position: 'relative' },
+  selectedImage: { width: '100%', height: '100%', borderRadius: 8 },
+  removeImageBtn: { position: 'absolute', top: 0, right: 0, backgroundColor: '#fff', borderRadius: 12 },
+  addMoreBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, marginTop: 16, borderWidth: 1, borderColor: '#2c5a73', borderRadius: 8, borderStyle: 'dashed' },
+  addMoreText: { color: '#2c5a73', fontSize: 14, fontWeight: '600', marginLeft: 8 },
+  uploadPrompt: { alignItems: 'center', paddingVertical: 32 },
+  uploadTitle: { fontSize: 18, fontWeight: 'bold', color: '#1e293b', marginTop: 16, marginBottom: 8 },
+  uploadText: { fontSize: 14, color: '#64748b', textAlign: 'center', marginBottom: 24 },
+  uploadBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#2c5a73', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8 },
+  uploadBtnText: { color: '#fff', fontSize: 16, fontWeight: '600', marginLeft: 8 },
+  uploadTip: { fontSize: 12, color: '#64748b', marginTop: 16, fontStyle: 'italic' },
+  balancePreview: { backgroundColor: '#f8fafc', padding: 16, borderRadius: 12, marginBottom: 20, alignItems: 'center' },
+  balancePreviewLabel: { fontSize: 14, color: '#64748b', marginBottom: 8 },
+  balancePreviewAmount: { fontSize: 24, fontWeight: 'bold', color: '#1e293b' },
+  sectionSubtitle: { fontSize: 16, fontWeight: '600', color: '#1e293b', marginBottom: 12 },
+  row: { flexDirection: 'row' },
+  noteBox: { flexDirection: 'row', backgroundColor: '#eff6ff', padding: 12, borderRadius: 8, marginTop: 16, alignItems: 'center' },
+  noteText: { flex: 1, fontSize: 12, color: '#1e293b', marginLeft: 8, lineHeight: 18 },
+  bookingDetailSection: { marginBottom: 20 },
+  bookingDetailRow: { marginBottom: 16 },
+  bookingDetailLabel: { fontSize: 12, color: '#64748b', marginBottom: 4 },
+  bookingDetailValue: { fontSize: 15, color: '#1e293b', fontWeight: '500' },
+  contactRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  callBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#10B981', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
+  callBtnText: { color: '#fff', fontSize: 14, fontWeight: '600', marginLeft: 6 },
+  ratingDisplay: { flexDirection: 'row', alignItems: 'center' },
+  ratingValue: { fontSize: 15, fontWeight: '600', color: '#F59E0B', marginLeft: 4 },
+  feedbackText: { fontSize: 14, color: '#64748b', fontStyle: 'italic', marginTop: 4 },
+  modalActions: { flexDirection: 'row', marginTop: 20 },
+  acceptModalBtn: { flex: 1, backgroundColor: '#10B981', paddingVertical: 14, borderRadius: 8, alignItems: 'center', marginRight: 8 },
+  acceptModalBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  rejectModalBtn: { flex: 1, backgroundColor: '#fff', paddingVertical: 14, borderRadius: 8, alignItems: 'center', marginLeft: 8, borderWidth: 1, borderColor: '#EF4444' },
+  rejectModalBtnText: { color: '#EF4444', fontSize: 16, fontWeight: '600' },
+  completeModalBtn: { backgroundColor: '#10B981', paddingVertical: 14, borderRadius: 8, alignItems: 'center', marginTop: 20 },
+  completeModalBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  warningContainer: { alignItems: 'center', marginBottom: 20 },
+  warningTitle: { fontSize: 18, fontWeight: 'bold', color: '#1e293b', marginTop: 12, marginBottom: 8 },
+  warningText: { fontSize: 14, color: '#64748b', textAlign: 'center' },
+  otpContainer: { alignItems: 'center', paddingVertical: 20 },
+  otpIconContainer: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#D1FAE5', justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
+  otpTitle: { fontSize: 20, fontWeight: 'bold', color: '#1e293b', marginBottom: 8 },
+  otpText: { fontSize: 14, color: '#64748b', textAlign: 'center', marginBottom: 24 },
+  otpInput: { width: '100%', backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, padding: 16, fontSize: 20, textAlign: 'center', letterSpacing: 8, marginBottom: 16, color: '#1e293b' },
+  verifyBtn: { width: '100%', backgroundColor: '#10B981', paddingVertical: 14, borderRadius: 8, alignItems: 'center' },
+  verifyBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  otpNote: { fontSize: 12, color: '#64748b', textAlign: 'center', marginTop: 16, fontStyle: 'italic' },
+  placesScroll: { flexDirection: 'row', marginBottom: 8 },
+  placeChip: { paddingHorizontal: 16, paddingVertical: 8, backgroundColor: '#f8fafc', borderRadius: 20, marginRight: 8, borderWidth: 1, borderColor: '#e2e8f0' },
+  placeChipSelected: { backgroundColor: '#2c5a73', borderColor: '#2c5a73' },
+  placeChipText: { fontSize: 12, color: '#64748b' },
+  placeChipTextSelected: { color: '#fff' },
 });

@@ -164,7 +164,7 @@ export default function AdminDashboard({ navigation }) {
 
   const greeting = getGreeting();
 
-  // Load Admin Dashboard Data
+  // Load Admin Dashboard Data (total users, places, transactions, withdrawals)
   const loadDashboardData = async () => {
     try {
       let response;
@@ -179,8 +179,6 @@ export default function AdminDashboard({ navigation }) {
       
       return {
         users: data.totalUsers || 0,
-        photographers: data.totalPhotographers || 0,
-        guiders: data.totalGuiders || 0,
         places: data.totalPlaces || 0,
         transactions: data.totalTransactions || 0,
         pendingWithdrawals: data.pendingWithdrawals || 0,
@@ -191,40 +189,86 @@ export default function AdminDashboard({ navigation }) {
     }
   };
 
-  // Load Photographer Requests Count
-  const loadPhotographerRequests = async () => {
+  // Load all photographers and count only APPROVED ones
+  const loadApprovedPhotographersCount = async () => {
     try {
       const response = await api.post(API.GET_PHOTOGRAPHERS_ALL, { admin: true });
       const responseData = response.data || {};
       const photographersData = responseData.data || [];
       
-      return photographersData.filter(p => 
-        p.approvalStatus === "PENDING" || 
-        p.approvalStatus === "pending" ||
-        !p.approvalStatus
-      ).length;
+      // Filter by approvalStatus === "APPROVED" (case-insensitive, but enum is "Approved")
+      const approved = photographersData.filter(p => 
+        p.approvalStatus === "Approved" || p.approvalStatus === "APPROVED"
+      );
+      return approved.length;
     } catch (error) {
       return 0;
     }
   };
 
-  // Load Guider Requests Count
-  const loadGuiderRequests = async () => {
+  // Load all guiders and count only APPROVED ones
+  const loadApprovedGuidersCount = async () => {
     try {
       const response = await api.post(API.GET_GUIDERS_ALL, { admin: true });
       const responseData = response.data || {};
       const guidersData = responseData.data || [];
       
-      return guidersData.filter(g => 
-        g.approvalStatus === "PENDING" || 
-        g.approvalStatus === "pending" ||
-        !g.approvalStatus
-      ).length;
+      const approved = guidersData.filter(g => 
+        g.approvalStatus === "Approved" || g.approvalStatus === "APPROVED"
+      );
+      return approved.length;
     } catch (error) {
       return 0;
     }
   };
 
+// Load Photographer Requests Count (PENDING) using filtered API
+const loadPhotographerRequests = async () => {
+  try {
+    const formData = new URLSearchParams();
+    formData.append("page", "1");
+    formData.append("perPage", "1"); // only need count, fetch minimal
+    formData.append("status", "In review");
+    formData.append("admin", "true");
+
+    const response = await api.post(API.GET_PHOTOGRAPHERS_ALL, formData.toString(), {
+      headers: { "Content-Type": "application/x-www-form-urlencoded" }
+    });
+
+    if (response.data?.status) {
+      const photographersData = response.data.data || [];
+      return photographersData.length;
+    }
+    return 0;
+  } catch (error) {
+    console.error("❌ Error loading photographer requests:", error);
+    return 0;
+  }
+};
+
+// Load Guider Requests Count (PENDING) using filtered API
+const loadGuiderRequests = async () => {
+  try {
+    const formData = new URLSearchParams();
+    formData.append("page", "1");
+    formData.append("perPage", "1");
+    formData.append("status", "In review");
+    formData.append("admin", "true");
+
+    const response = await api.post(API.GET_GUIDERS_ALL, formData.toString(), {
+      headers: { "Content-Type": "application/x-www-form-urlencoded" }
+    });
+
+    if (response.data?.status) {
+      const guidersData = response.data.data || [];
+      return guidersData.length;
+    }
+    return 0;
+  } catch (error) {
+    console.error("❌ Error loading guider requests:", error);
+    return 0;
+  }
+};
   // Load Places Data
   const loadPlaces = async () => {
     try {
@@ -243,21 +287,25 @@ export default function AdminDashboard({ navigation }) {
     try {
       const results = await Promise.allSettled([
         loadDashboardData(),
+        loadApprovedPhotographersCount(),
+        loadApprovedGuidersCount(),
         loadPhotographerRequests(),
         loadGuiderRequests(),
         loadPlaces(),
       ]);
       
       const dashboardData = results[0].status === 'fulfilled' ? results[0].value : null;
-      const photographerRequests = results[1].status === 'fulfilled' ? results[1].value : 0;
-      const guiderRequests = results[2].status === 'fulfilled' ? results[2].value : 0;
-      const placesData = results[3].status === 'fulfilled' ? results[3].value : [];
+      const approvedPhotographers = results[1].status === 'fulfilled' ? results[1].value : 0;
+      const approvedGuiders = results[2].status === 'fulfilled' ? results[2].value : 0;
+      const photographerRequests = results[3].status === 'fulfilled' ? results[3].value : 0;
+      const guiderRequests = results[4].status === 'fulfilled' ? results[4].value : 0;
+      const placesData = results[5].status === 'fulfilled' ? results[5].value : [];
       
       setCounts(prev => ({
         ...prev,
         users: dashboardData?.users || 0,
-        photographers: dashboardData?.photographers || 0,
-        guiders: dashboardData?.guiders || 0,
+        photographers: approvedPhotographers,
+        guiders: approvedGuiders,
         places: dashboardData?.places || 0,
         transactions: dashboardData?.transactions || 0,
         pendingWithdrawals: dashboardData?.pendingWithdrawals || 0,
@@ -290,8 +338,8 @@ export default function AdminDashboard({ navigation }) {
   // Main cards for overview
   const mainCards = [
     { label: "Total Users", value: counts.users, icon: "account-group", route: "UserList", subText: "Registered users" },
-    { label: "Photographers", value: counts.photographers, icon: "camera", route: "PhotographerList", subText: "Active photographers" },
-    { label: "Guiders", value: counts.guiders, icon: "map-marker-account", route: "GuiderList", subText: "Active guides" },
+    { label: "Photographers", value: counts.photographers, icon: "camera", route: "PhotographerList", subText: "Approved photographers" },
+    { label: "Guiders", value: counts.guiders, icon: "map-marker-account", route: "GuiderList", subText: "Approved guides" },
     { label: "Places", value: counts.places, icon: "map-marker-multiple", route: "PlaceList", subText: "Tourist places" },
   ];
 
@@ -620,7 +668,6 @@ const styles = StyleSheet.create({
   statsPreviewContainer: {
     backgroundColor: '#fff',
     paddingVertical: 12,
-  
     marginTop: -10,
     marginHorizontal: 16,
     borderRadius: 20,
@@ -630,7 +677,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     marginBottom: 10,
-    marginTop:20
   },
   statsPreviewScroll: {
     paddingHorizontal: 0,

@@ -22,6 +22,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { AuthContext } from "../../context/AuthContext";
 import api from "../../api/apiClient";
 import { API } from "../../api/endpoints";
+import * as FileSystem from 'expo-file-system/legacy';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get("window");
 const BASE_URL = "https://localguider.sinfode.com";
@@ -54,6 +56,7 @@ export default function UserListScreen({ navigation }) {
     const [editModalVisible, setEditModalVisible] = useState(false);
     const [actionLoading, setActionLoading] = useState(false);
     const [filter, setFilter] = useState("all");
+    const [downloading, setDownloading] = useState(false);
 
     // Edit form states
     const [editName, setEditName] = useState("");
@@ -71,18 +74,18 @@ export default function UserListScreen({ navigation }) {
     const fetchUsers = async () => {
         try {
             console.log("📡 Fetching users...");
-            
+
             const response = await api.post(API.GET_USER_LIST, {
                 page: 1,
                 perPage: 100,
             });
-            
+
             const responseData = response.data || {};
             console.log("👥 Users Full Response:", JSON.stringify(responseData, null, 2));
-            
+
             const usersData = responseData.data || [];
             console.log("👥 Users Array:", usersData.length);
-            
+
             // Format users data - EXCLUDE ADMINS
             const formattedUsers = usersData
                 .filter(user => !user.admin)
@@ -110,9 +113,9 @@ export default function UserListScreen({ navigation }) {
                     longitude: user.longitude || 0,
                     lastUpdate: user.lastUpdate || "",
                 }));
-            
+
             setUsers(formattedUsers);
-            
+
         } catch (error) {
             console.error("❌ Error fetching users:", error.response?.data || error.message);
             Alert.alert(
@@ -145,9 +148,9 @@ export default function UserListScreen({ navigation }) {
     // Filter users
     const getFilteredUsers = () => {
         let filtered = users;
-        
+
         if (searchQuery) {
-            filtered = filtered.filter(user => 
+            filtered = filtered.filter(user =>
                 user.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 user.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 user.phone?.includes(searchQuery) ||
@@ -155,7 +158,7 @@ export default function UserListScreen({ navigation }) {
                 user.username?.toLowerCase().includes(searchQuery.toLowerCase())
             );
         }
-        
+
         switch (filter) {
             case "active":
                 filtered = filtered.filter(user => user.status === "active");
@@ -175,7 +178,7 @@ export default function UserListScreen({ navigation }) {
             default:
                 break;
         }
-        
+
         return filtered;
     };
 
@@ -197,7 +200,7 @@ export default function UserListScreen({ navigation }) {
         setEditModalVisible(true);
     };
 
-    // ✅ FIXED: Update user with proper URL encoding
+    // Update user
     const updateUser = async () => {
         if (!editName.trim()) {
             Alert.alert("Error", "Name is required");
@@ -206,8 +209,7 @@ export default function UserListScreen({ navigation }) {
 
         try {
             setActionLoading(true);
-            
-            // Create URLSearchParams instead of FormData (more reliable for @RequestParam)
+
             const params = new URLSearchParams();
             params.append("userId", selectedUser.id.toString());
             if (editName) params.append("name", editName);
@@ -218,18 +220,11 @@ export default function UserListScreen({ navigation }) {
             if (editGender) params.append("gender", editGender);
             if (editDob) params.append("dob", editDob);
             params.append("isActive", editStatus === "active" ? "true" : "false");
-            
-            console.log("📝 Updating user with params:", params.toString());
-            console.log("📝 API URL:", API.UPDATE_PROFILE);
-            
+
             const response = await api.post(API.UPDATE_PROFILE, params.toString(), {
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             });
-            
-            console.log("📝 Update Response:", response.data);
-            
+
             if (response.data?.status) {
                 Alert.alert("Success", "User updated successfully!");
                 setEditModalVisible(false);
@@ -237,18 +232,14 @@ export default function UserListScreen({ navigation }) {
             } else {
                 Alert.alert("Error", response.data?.message || "Failed to update user");
             }
-            
         } catch (error) {
-            console.error("❌ Error updating user:", error.response?.data || error.message);
-            console.error("❌ Error status:", error.response?.status);
-            console.error("❌ Error headers:", error.response?.headers);
-            Alert.alert("Error", error.response?.data?.message || "Failed to update user. Please try again.");
+            Alert.alert("Error", error.response?.data?.message || "Failed to update user");
         } finally {
             setActionLoading(false);
         }
     };
 
-    // ✅ FIXED: Delete user with URLSearchParams
+    // Delete user
     const deleteUser = async (userId, userName) => {
         Alert.alert(
             "Delete User",
@@ -261,22 +252,14 @@ export default function UserListScreen({ navigation }) {
                     onPress: async () => {
                         try {
                             setActionLoading(true);
-                            
-                            console.log("🗑️ Deleting user with ID:", userId);
-                            console.log("🗑️ API URL:", API.DELETE_USER);
-                            
-                            // Use URLSearchParams instead of FormData
+
                             const params = new URLSearchParams();
                             params.append("userId", userId.toString());
-                            
+
                             const response = await api.post(API.DELETE_USER, params.toString(), {
-                                headers: {
-                                    'Content-Type': 'application/x-www-form-urlencoded',
-                                },
+                                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                             });
-                            
-                            console.log("🗑️ Delete Response:", response.data);
-                            
+
                             if (response.data?.status) {
                                 Alert.alert("Success", "User deleted successfully!");
                                 setDetailsModalVisible(false);
@@ -284,12 +267,8 @@ export default function UserListScreen({ navigation }) {
                             } else {
                                 Alert.alert("Error", response.data?.message || "Failed to delete user");
                             }
-                            
                         } catch (error) {
-                            console.error("❌ Error deleting user:", error.response?.data || error.message);
-                            console.error("❌ Error status:", error.response?.status);
-                            console.error("❌ Error headers:", error.response?.headers);
-                            Alert.alert("Error", error.response?.data?.message || "Failed to delete user. Please try again.");
+                            Alert.alert("Error", error.response?.data?.message || "Failed to delete user");
                         } finally {
                             setActionLoading(false);
                         }
@@ -299,7 +278,7 @@ export default function UserListScreen({ navigation }) {
         );
     };
 
-    // ✅ FIXED: Update user status with URLSearchParams
+    // Update user status
     const updateUserStatus = async (userId, currentStatus, userName) => {
         Alert.alert(
             `${currentStatus ? "Deactivate" : "Activate"} User`,
@@ -311,23 +290,15 @@ export default function UserListScreen({ navigation }) {
                     onPress: async () => {
                         try {
                             setActionLoading(true);
-                            
-                            console.log("🔄 Updating user status:", { userId, isActive: !currentStatus });
-                            console.log("🔄 API URL:", API.UPDATE_PROFILE);
-                            
-                            // Use URLSearchParams
+
                             const params = new URLSearchParams();
                             params.append("userId", userId.toString());
                             params.append("isActive", (!currentStatus).toString());
-                            
+
                             const response = await api.post(API.UPDATE_PROFILE, params.toString(), {
-                                headers: {
-                                    'Content-Type': 'application/x-www-form-urlencoded',
-                                },
+                                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                             });
-                            
-                            console.log("🔄 Update Status Response:", response.data);
-                            
+
                             if (response.data?.status) {
                                 Alert.alert(
                                     "Success",
@@ -338,12 +309,8 @@ export default function UserListScreen({ navigation }) {
                             } else {
                                 Alert.alert("Error", response.data?.message || "Failed to update status");
                             }
-                            
                         } catch (error) {
-                            console.error("❌ Error updating user status:", error.response?.data || error.message);
-                            console.error("❌ Error status:", error.response?.status);
-                            console.error("❌ Error headers:", error.response?.headers);
-                            Alert.alert("Error", error.response?.data?.message || "Failed to update user status. Please try again.");
+                            Alert.alert("Error", error.response?.data?.message || "Failed to update user status");
                         } finally {
                             setActionLoading(false);
                         }
@@ -351,6 +318,39 @@ export default function UserListScreen({ navigation }) {
                 },
             ]
         );
+    };
+
+    // ✅ UPDATED: Download users as Excel file (without sharing)
+    const downloadUsers = async () => {
+        try {
+            setDownloading(true);
+            const token = await AsyncStorage.getItem('token');
+            if (!token) {
+                Alert.alert('Error', 'No authentication token');
+                return;
+            }
+
+            const url = `${BASE_URL}/api/download/users`;
+            const fileUri = FileSystem.documentDirectory + 'users.xlsx';
+
+            const downloadRes = await FileSystem.downloadAsync(url, fileUri, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                },
+            });
+
+            if (downloadRes.status !== 200) {
+                throw new Error('Download failed');
+            }
+
+            // Only show success message with file path
+            Alert.alert('Success', `File saved to:\n${fileUri}`);
+        } catch (error) {
+            console.error('Download error:', error);
+            Alert.alert('Error', 'Failed to download users list');
+        } finally {
+            setDownloading(false);
+        }
     };
 
     const getAvatarColor = (name) => {
@@ -361,7 +361,7 @@ export default function UserListScreen({ navigation }) {
     };
 
     const getRoleColor = (role) => {
-        switch(role) {
+        switch (role) {
             case "Photographer": return "#F59E0B";
             case "Tour Guide": return "#10B981";
             default: return "#3B82F6";
@@ -390,10 +390,10 @@ export default function UserListScreen({ navigation }) {
             ]}
             onPress={() => setFilter(filterType)}
         >
-            <Ionicons 
-                name={icon} 
-                size={16} 
-                color={filter === filterType ? "#2c5a73" : "#fff"} 
+            <Ionicons
+                name={icon}
+                size={16}
+                color={filter === filterType ? "#2c5a73" : "#fff"}
             />
             <Text style={[
                 styles.filterButtonText,
@@ -407,9 +407,9 @@ export default function UserListScreen({ navigation }) {
     const renderUserItem = ({ item }) => {
         const avatarColor = getAvatarColor(item.name);
         const imageUrl = item.profilePicture ? getImageUrl(item.profilePicture) : null;
-        
+
         return (
-            <TouchableOpacity 
+            <TouchableOpacity
                 style={styles.card}
                 onPress={() => showUserDetails(item)}
                 activeOpacity={0.9}
@@ -422,7 +422,7 @@ export default function UserListScreen({ navigation }) {
                         {/* Profile Picture or Avatar */}
                         <View style={[styles.avatar, { backgroundColor: avatarColor }]}>
                             {imageUrl ? (
-                                <Image 
+                                <Image
                                     source={{ uri: imageUrl }}
                                     style={styles.avatarImage}
                                     onError={(e) => console.log("Image load error:", e.nativeEvent.error)}
@@ -433,7 +433,7 @@ export default function UserListScreen({ navigation }) {
                                 </Text>
                             )}
                         </View>
-                        
+
                         <View style={styles.userInfo}>
                             <Text style={styles.userName} numberOfLines={1}>
                                 {item.name}
@@ -448,7 +448,7 @@ export default function UserListScreen({ navigation }) {
                                 </Text>
                             </View>
                         </View>
-                        
+
                         <View style={[
                             styles.statusDot,
                             { backgroundColor: item.status === "active" ? "#10B981" : "#EF4444" }
@@ -461,17 +461,17 @@ export default function UserListScreen({ navigation }) {
                             <Ionicons name="wallet-outline" size={14} color="#2c5a73" />
                             <Text style={styles.statValue}>₹{item.balance?.toLocaleString() || 0}</Text>
                         </View>
-                        
+
                         <View style={styles.statDivider} />
-                        
+
                         <View style={styles.statItem}>
                             <Ionicons name="calendar-outline" size={14} color="#2c5a73" />
                             <Text style={styles.statValue}>
                                 {formatDate(item.createdAt)}
                             </Text>
                         </View>
-                        
-                        <View style={[styles.roleBadge, { 
+
+                        <View style={[styles.roleBadge, {
                             backgroundColor: getRoleColor(item.role) + '20'
                         }]}>
                             <Text style={[styles.roleText, { color: getRoleColor(item.role) }]}>
@@ -496,27 +496,42 @@ export default function UserListScreen({ navigation }) {
                 style={styles.header}
             >
                 <View style={styles.headerTop}>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={styles.menuButton}
                         onPress={() => navigation.goBack()}
                     >
                         <Ionicons name="arrow-back" size={24} color="#fff" />
                     </TouchableOpacity>
-                    
+
                     <View style={styles.headerCenter}>
                         <Text style={styles.greeting}>{greeting}, Admin</Text>
                         <Text style={styles.subtitle}>User Management</Text>
                     </View>
-                    
-                    <View style={styles.userCountContainer}>
-                        <Text style={styles.userCountNumber}>{filteredUsers.length}</Text>
-                        <Text style={styles.userCountLabel}>Users</Text>
+
+                    {/* Download Button */}
+                    <View style={styles.headerRight}>
+                        <TouchableOpacity
+                            style={styles.downloadButton}
+                            onPress={downloadUsers}
+                            disabled={downloading}
+                        >
+                            {downloading ? (
+                                <ActivityIndicator size="small" color="#fff" />
+                            ) : (
+                                <Ionicons name="download-outline" size={22} color="#fff" />
+                            )}
+                        </TouchableOpacity>
+
+                        <View style={styles.userCountContainer}>
+                            <Text style={styles.userCountNumber}>{filteredUsers.length}</Text>
+                            <Text style={styles.userCountLabel}>Users</Text>
+                        </View>
                     </View>
                 </View>
 
                 {/* Filter Buttons */}
-                <ScrollView 
-                    horizontal 
+                <ScrollView
+                    horizontal
                     showsHorizontalScrollIndicator={false}
                     style={styles.filterScroll}
                 >
@@ -560,8 +575,8 @@ export default function UserListScreen({ navigation }) {
                     renderItem={renderUserItem}
                     keyExtractor={item => item.id?.toString()}
                     refreshControl={
-                        <RefreshControl 
-                            refreshing={refreshing} 
+                        <RefreshControl
+                            refreshing={refreshing}
                             onRefresh={onRefresh}
                             colors={["#2c5a73"]}
                             tintColor="#2c5a73"
@@ -597,16 +612,16 @@ export default function UserListScreen({ navigation }) {
                                 <Ionicons name="close" size={24} color="#64748b" />
                             </TouchableOpacity>
                         </View>
-                        
+
                         {selectedUser && (
                             <ScrollView showsVerticalScrollIndicator={false}>
                                 {/* Profile Section */}
                                 <View style={styles.modalProfileSection}>
-                                    <View style={[styles.modalAvatar, { 
-                                        backgroundColor: getAvatarColor(selectedUser.name) 
+                                    <View style={[styles.modalAvatar, {
+                                        backgroundColor: getAvatarColor(selectedUser.name)
                                     }]}>
                                         {selectedUser.profilePicture ? (
-                                            <Image 
+                                            <Image
                                                 source={{ uri: getImageUrl(selectedUser.profilePicture) }}
                                                 style={styles.modalAvatarImage}
                                             />
@@ -616,11 +631,11 @@ export default function UserListScreen({ navigation }) {
                                             </Text>
                                         )}
                                     </View>
-                                    
+
                                     <Text style={styles.modalUserName}>{selectedUser.name}</Text>
-                                    
+
                                     <View style={styles.modalUserMeta}>
-                                        <View style={[styles.roleBadge, { 
+                                        <View style={[styles.roleBadge, {
                                             backgroundColor: getRoleColor(selectedUser.role) + '20',
                                             paddingHorizontal: 12,
                                             paddingVertical: 4,
@@ -629,14 +644,14 @@ export default function UserListScreen({ navigation }) {
                                                 {selectedUser.role}
                                             </Text>
                                         </View>
-                                        
-                                        <View style={[styles.statusBadge, { 
+
+                                        <View style={[styles.statusBadge, {
                                             backgroundColor: selectedUser.status === "active" ? "#10B981" : "#EF4444"
                                         }]}>
-                                            <Ionicons 
-                                                name={selectedUser.status === "active" ? "checkmark-circle" : "close-circle"} 
-                                                size={14} 
-                                                color="#fff" 
+                                            <Ionicons
+                                                name={selectedUser.status === "active" ? "checkmark-circle" : "close-circle"}
+                                                size={14}
+                                                color="#fff"
                                             />
                                             <Text style={styles.statusText}>
                                                 {selectedUser.status?.toUpperCase()}
@@ -648,37 +663,37 @@ export default function UserListScreen({ navigation }) {
                                 {/* Personal Information */}
                                 <View style={styles.modalSection}>
                                     <Text style={styles.modalSectionTitle}>Personal Information</Text>
-                                    
+
                                     <View style={styles.modalInfoRow}>
                                         <Ionicons name="person-outline" size={18} color="#2c5a73" />
                                         <Text style={styles.modalInfoLabel}>Username:</Text>
                                         <Text style={styles.modalInfoValue}>{selectedUser.username || "N/A"}</Text>
                                     </View>
-                                    
+
                                     <View style={styles.modalInfoRow}>
                                         <Ionicons name="mail-outline" size={18} color="#2c5a73" />
                                         <Text style={styles.modalInfoLabel}>Email:</Text>
                                         <Text style={styles.modalInfoValue}>{selectedUser.email}</Text>
                                     </View>
-                                    
+
                                     <View style={styles.modalInfoRow}>
                                         <Ionicons name="call-outline" size={18} color="#2c5a73" />
                                         <Text style={styles.modalInfoLabel}>Phone:</Text>
                                         <Text style={styles.modalInfoValue}>{selectedUser.countryCode} {selectedUser.phone}</Text>
                                     </View>
-                                    
+
                                     <View style={styles.modalInfoRow}>
                                         <Ionicons name="location-outline" size={18} color="#2c5a73" />
                                         <Text style={styles.modalInfoLabel}>Address:</Text>
                                         <Text style={styles.modalInfoValue}>{selectedUser.address || "N/A"}</Text>
                                     </View>
-                                    
+
                                     <View style={styles.modalInfoRow}>
                                         <Ionicons name="male-female-outline" size={18} color="#2c5a73" />
                                         <Text style={styles.modalInfoLabel}>Gender:</Text>
                                         <Text style={styles.modalInfoValue}>{selectedUser.gender || "N/A"}</Text>
                                     </View>
-                                    
+
                                     <View style={styles.modalInfoRow}>
                                         <Ionicons name="calendar-outline" size={18} color="#2c5a73" />
                                         <Text style={styles.modalInfoLabel}>DOB:</Text>
@@ -689,7 +704,7 @@ export default function UserListScreen({ navigation }) {
                                 {/* Account Information */}
                                 <View style={styles.modalSection}>
                                     <Text style={styles.modalSectionTitle}>Account Information</Text>
-                                    
+
                                     <View style={styles.modalInfoRow}>
                                         <Ionicons name="wallet-outline" size={18} color="#2c5a73" />
                                         <Text style={styles.modalInfoLabel}>Balance:</Text>
@@ -697,13 +712,13 @@ export default function UserListScreen({ navigation }) {
                                             ₹{selectedUser.balance?.toLocaleString() || 0}
                                         </Text>
                                     </View>
-                                    
+
                                     <View style={styles.modalInfoRow}>
                                         <Ionicons name="time-outline" size={18} color="#2c5a73" />
                                         <Text style={styles.modalInfoLabel}>Member Since:</Text>
                                         <Text style={styles.modalInfoValue}>{formatDate(selectedUser.createdAt)}</Text>
                                     </View>
-                                    
+
                                     <View style={styles.modalInfoRow}>
                                         <Ionicons name="refresh-outline" size={18} color="#2c5a73" />
                                         <Text style={styles.modalInfoLabel}>Last Update:</Text>
@@ -714,7 +729,7 @@ export default function UserListScreen({ navigation }) {
                                 {/* Roles */}
                                 <View style={styles.modalSection}>
                                     <Text style={styles.modalSectionTitle}>Roles & Permissions</Text>
-                                    
+
                                     <View style={styles.roleChips}>
                                         {selectedUser.isPhotographer && (
                                             <View style={[styles.roleChip, { backgroundColor: "#F59E0B20" }]}>
@@ -722,21 +737,21 @@ export default function UserListScreen({ navigation }) {
                                                 <Text style={[styles.roleChipText, { color: "#F59E0B" }]}>Photographer</Text>
                                             </View>
                                         )}
-                                        
+
                                         {selectedUser.isGuider && (
                                             <View style={[styles.roleChip, { backgroundColor: "#10B98120" }]}>
                                                 <Ionicons name="map" size={14} color="#10B981" />
                                                 <Text style={[styles.roleChipText, { color: "#10B981" }]}>Tour Guide</Text>
                                             </View>
                                         )}
-                                        
+
                                         {!selectedUser.isPhotographer && !selectedUser.isGuider && (
                                             <View style={[styles.roleChip, { backgroundColor: "#3B82F620" }]}>
                                                 <Ionicons name="person" size={14} color="#3B82F6" />
                                                 <Text style={[styles.roleChipText, { color: "#3B82F6" }]}>Tourist</Text>
                                             </View>
                                         )}
-                                        
+
                                         {selectedUser.isVerified && (
                                             <View style={[styles.roleChip, { backgroundColor: "#8B5CF620" }]}>
                                                 <Ionicons name="checkmark-circle" size={14} color="#8B5CF6" />
@@ -748,7 +763,7 @@ export default function UserListScreen({ navigation }) {
 
                                 {/* Action Buttons */}
                                 <View style={styles.modalActions}>
-                                    <TouchableOpacity 
+                                    <TouchableOpacity
                                         style={[styles.actionButton, styles.editButton]}
                                         onPress={() => {
                                             setDetailsModalVisible(false);
@@ -758,28 +773,28 @@ export default function UserListScreen({ navigation }) {
                                         <Ionicons name="create-outline" size={18} color="#fff" />
                                         <Text style={styles.actionButtonText}>Edit</Text>
                                     </TouchableOpacity>
-                                    
-                                    <TouchableOpacity 
-                                        style={[styles.actionButton, 
+
+                                    <TouchableOpacity
+                                        style={[styles.actionButton,
                                             selectedUser.status === "active" ? styles.deactivateButton : styles.activateButton
                                         ]}
                                         onPress={() => updateUserStatus(
-                                            selectedUser.id, 
+                                            selectedUser.id,
                                             selectedUser.status === "active",
                                             selectedUser.name
                                         )}
                                     >
-                                        <Ionicons 
-                                            name={selectedUser.status === "active" ? "pause-circle" : "play-circle"} 
-                                            size={18} 
-                                            color="#fff" 
+                                        <Ionicons
+                                            name={selectedUser.status === "active" ? "pause-circle" : "play-circle"}
+                                            size={18}
+                                            color="#fff"
                                         />
                                         <Text style={styles.actionButtonText}>
                                             {selectedUser.status === "active" ? "Deactivate" : "Activate"}
                                         </Text>
                                     </TouchableOpacity>
-                                    
-                                    <TouchableOpacity 
+
+                                    <TouchableOpacity
                                         style={[styles.actionButton, styles.deleteButton]}
                                         onPress={() => deleteUser(selectedUser.id, selectedUser.name)}
                                     >
@@ -809,7 +824,7 @@ export default function UserListScreen({ navigation }) {
                                 <Ionicons name="close" size={24} color="#64748b" />
                             </TouchableOpacity>
                         </View>
-                        
+
                         <ScrollView showsVerticalScrollIndicator={false}>
                             <View style={styles.editForm}>
                                 <Text style={styles.inputLabel}>Name *</Text>
@@ -820,7 +835,7 @@ export default function UserListScreen({ navigation }) {
                                     placeholder="Enter name"
                                     placeholderTextColor="#94a3b8"
                                 />
-                                
+
                                 <Text style={styles.inputLabel}>Email</Text>
                                 <TextInput
                                     style={styles.input}
@@ -831,7 +846,7 @@ export default function UserListScreen({ navigation }) {
                                     autoCapitalize="none"
                                     placeholderTextColor="#94a3b8"
                                 />
-                                
+
                                 <Text style={styles.inputLabel}>Phone</Text>
                                 <TextInput
                                     style={styles.input}
@@ -841,7 +856,7 @@ export default function UserListScreen({ navigation }) {
                                     keyboardType="phone-pad"
                                     placeholderTextColor="#94a3b8"
                                 />
-                                
+
                                 <Text style={styles.inputLabel}>Username</Text>
                                 <TextInput
                                     style={styles.input}
@@ -851,7 +866,7 @@ export default function UserListScreen({ navigation }) {
                                     autoCapitalize="none"
                                     placeholderTextColor="#94a3b8"
                                 />
-                                
+
                                 <Text style={styles.inputLabel}>Address</Text>
                                 <TextInput
                                     style={[styles.input, styles.textArea]}
@@ -862,7 +877,7 @@ export default function UserListScreen({ navigation }) {
                                     numberOfLines={2}
                                     placeholderTextColor="#94a3b8"
                                 />
-                                
+
                                 <Text style={styles.inputLabel}>Gender</Text>
                                 <View style={styles.genderContainer}>
                                     <TouchableOpacity
@@ -877,7 +892,7 @@ export default function UserListScreen({ navigation }) {
                                             editGender === "male" && styles.genderTextSelected,
                                         ]}>Male</Text>
                                     </TouchableOpacity>
-                                    
+
                                     <TouchableOpacity
                                         style={[
                                             styles.genderOption,
@@ -890,7 +905,7 @@ export default function UserListScreen({ navigation }) {
                                             editGender === "female" && styles.genderTextSelected,
                                         ]}>Female</Text>
                                     </TouchableOpacity>
-                                    
+
                                     <TouchableOpacity
                                         style={[
                                             styles.genderOption,
@@ -904,7 +919,7 @@ export default function UserListScreen({ navigation }) {
                                         ]}>Other</Text>
                                     </TouchableOpacity>
                                 </View>
-                                
+
                                 <Text style={styles.inputLabel}>Date of Birth</Text>
                                 <TextInput
                                     style={styles.input}
@@ -913,7 +928,7 @@ export default function UserListScreen({ navigation }) {
                                     placeholder="YYYY-MM-DD"
                                     placeholderTextColor="#94a3b8"
                                 />
-                                
+
                                 <Text style={styles.inputLabel}>Status</Text>
                                 <View style={styles.statusContainer}>
                                     <TouchableOpacity
@@ -928,7 +943,7 @@ export default function UserListScreen({ navigation }) {
                                             editStatus === "active" && styles.statusTextActive,
                                         ]}>Active</Text>
                                     </TouchableOpacity>
-                                    
+
                                     <TouchableOpacity
                                         style={[
                                             styles.statusOption,
@@ -943,16 +958,16 @@ export default function UserListScreen({ navigation }) {
                                     </TouchableOpacity>
                                 </View>
                             </View>
-                            
+
                             <View style={styles.editActions}>
-                                <TouchableOpacity 
+                                <TouchableOpacity
                                     style={[styles.editButton, styles.cancelEditButton]}
                                     onPress={() => setEditModalVisible(false)}
                                 >
                                     <Text style={styles.cancelEditText}>Cancel</Text>
                                 </TouchableOpacity>
-                                
-                                <TouchableOpacity 
+
+                                <TouchableOpacity
                                     style={[styles.editButton, styles.saveEditButton]}
                                     onPress={updateUser}
                                     disabled={actionLoading}
@@ -988,7 +1003,7 @@ const styles = StyleSheet.create({
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 12,
-        marginTop:-35
+        marginTop: -35
     },
     headerTop: {
         flexDirection: "row",
@@ -1017,6 +1032,19 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: "rgba(255, 255, 255, 0.9)",
         fontWeight: "500",
+    },
+    headerRight: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+    },
+    downloadButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     userCountContainer: {
         backgroundColor: 'rgba(255,255,255,0.2)',

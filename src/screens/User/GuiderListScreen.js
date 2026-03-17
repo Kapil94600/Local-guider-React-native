@@ -24,6 +24,10 @@ import { LocationContext } from "../../context/LocationContext";
 import api from "../../api/apiClient";
 import { API } from "../../api/endpoints";
 
+// ✅ Import like hook and component
+import { useLikes } from '../../context/LikesContext';
+import LikeButton from "../../components/LikeButton";
+
 const BASE_URL = "https://localguider.sinfode.com";
 const API_BASE = "https://localguider.sinfode.com/api"; // used for fetch calls
 
@@ -31,6 +35,9 @@ export default function GuiderListScreen({ navigation, route }) {
   const { user } = useContext(AuthContext);
   const { location } = useContext(LocationContext);
   const { type } = route.params || { type: "all" };
+
+  // ✅ Like hook at top level
+  const { isLiked, toggleLike } = useLikes();
 
   // Existing state
   const [guiders, setGuiders] = useState([]);
@@ -118,13 +125,12 @@ export default function GuiderListScreen({ navigation, route }) {
     }
   };
 
-  // Fetch services for a specific guider (with token automatically added by interceptor)
+  // Fetch services for a specific guider
   const fetchGuiderServices = async (guiderId) => {
     if (guiderServices[guiderId]) return;
 
     try {
       console.log(`📡 Fetching services for guider ID: ${guiderId}`);
-      // Send as query params (the backend expects POST with parameters)
       const response = await api.post(API.GET_SERVICES, null, {
         params: { guiderId: guiderId }
       });
@@ -132,14 +138,13 @@ export default function GuiderListScreen({ navigation, route }) {
       console.log("📦 Services response:", response.data);
 
       if (response.data?.status && Array.isArray(response.data.data)) {
-        // Transform the services to match UI expectations
         const services = response.data.data.map(s => ({
           id: s.id,
           title: s.title,
           description: s.description,
-          price: s.servicePrice,          // backend uses "servicePrice"
+          price: s.servicePrice,
           duration: s.duration || "2 hours",
-          features: s.features || []      // if features are stored as JSON array
+          features: s.features || []
         }));
         setGuiderServices(prev => ({ ...prev, [guiderId]: services }));
       } else {
@@ -277,13 +282,21 @@ export default function GuiderListScreen({ navigation, route }) {
     </View>
   );
 
-  // Render each guider card
+  // ✅ Render each guider card with LikeButton
   const renderGuiderCard = ({ item }) => {
     const isExpanded = expandedGuider === item.id;
     const services = guiderServices[item.id] || [];
 
     return (
       <View style={styles.guiderCard}>
+        {/* Like Button – positioned absolutely */}
+        <LikeButton
+          isLiked={isLiked(item.id, 'guider')}
+          onPress={() => toggleLike(item, 'guider')}
+          size={18}
+          style={styles.cardLikeButton}
+        />
+
         <TouchableOpacity onPress={() => toggleGuiderExpand(item)} activeOpacity={0.7}>
           <View style={styles.cardHeader}>
             {item.photograph ? (
@@ -397,7 +410,6 @@ export default function GuiderListScreen({ navigation, route }) {
 
   // ----- Wallet & Payment Functions -----
 
-  // Fetch user's wallet balance (using profile endpoint with FormData)
   const fetchUserBalance = async () => {
     if (!user) return;
     try {
@@ -419,15 +431,12 @@ export default function GuiderListScreen({ navigation, route }) {
       const json = await response.json();
       if (json?.status && json?.data) {
         setUserBalance(json.data.balance || 0);
-      } else {
-        console.log("Profile fetch failed:", json);
       }
     } catch (error) {
       console.error("Error fetching balance:", error);
     }
   };
 
-  // Actual booking API call (using api client)
   const performBooking = async () => {
     try {
       setBookingLoading(true);
@@ -479,7 +488,6 @@ export default function GuiderListScreen({ navigation, route }) {
     }
   };
 
-  // Handle Pay via Wallet
   const handlePayWithWallet = async () => {
     const total = parseFloat(selectedService.price) || 0;
     if (userBalance < total) {
@@ -487,11 +495,9 @@ export default function GuiderListScreen({ navigation, route }) {
       return;
     }
     await performBooking();
-    // After booking, balance might have changed – refresh for next time
     fetchUserBalance();
   };
 
-  // Handle Razorpay payment for direct booking (using fetch, same as AddBalanceScreen)
   const handleRazorpayForBooking = async () => {
     if (!selectedService || !timeSlot) {
       Alert.alert("Error", "Please select a service and time slot");
@@ -507,7 +513,6 @@ export default function GuiderListScreen({ navigation, route }) {
     try {
       setBookingLoading(true);
 
-      // Get token and userId from storage
       const token = await AsyncStorage.getItem("token");
       const userId = await AsyncStorage.getItem("userId");
       if (!token || !userId) {
@@ -515,7 +520,6 @@ export default function GuiderListScreen({ navigation, route }) {
         return;
       }
 
-      // 1. Get Razorpay key
       const keyRes = await fetch(`${API_BASE}/settings/get`, {
         method: "POST",
       });
@@ -525,7 +529,6 @@ export default function GuiderListScreen({ navigation, route }) {
       }
       const razorpayKey = keyJson.data.razorpayAPIKey;
 
-      // 2. Create transaction
       const formData = new FormData();
       formData.append("userId", userId);
       formData.append("amount", amount.toString());
@@ -543,7 +546,6 @@ export default function GuiderListScreen({ navigation, route }) {
       }
       const orderId = transJson.data.paymentToken;
 
-      // 3. Open Razorpay
       const options = {
         description: `Booking: ${selectedService.title}`,
         currency: "INR",
@@ -559,7 +561,6 @@ export default function GuiderListScreen({ navigation, route }) {
       const data = await RazorpayCheckout.open(options);
       console.log("Payment success", data);
 
-      // 4. Update transaction status
       const updateForm = new FormData();
       updateForm.append("paymentToken", orderId);
       updateForm.append("paymentStatus", "success");
@@ -574,8 +575,7 @@ export default function GuiderListScreen({ navigation, route }) {
 
       Alert.alert("Success", "Payment successful! Now confirming your booking...");
       
-      // Refresh balance and proceed with booking
-      await fetchUserBalance(); // this updates the local state
+      await fetchUserBalance();
       await performBooking();
     } catch (error) {
       console.log("Payment error", error);
@@ -585,7 +585,6 @@ export default function GuiderListScreen({ navigation, route }) {
     }
   };
 
-  // Handle book now button press
   const handleBookNow = (guider, service) => {
     if (!user) {
       setShowLoginPrompt(true);
@@ -594,7 +593,7 @@ export default function GuiderListScreen({ navigation, route }) {
     setSelectedGuider(guider);
     setSelectedService(service);
     setBookingModal(true);
-    fetchUserBalance(); // fetch latest balance when modal opens
+    fetchUserBalance();
   };
 
   // ----- Modal Rendering Functions -----
@@ -788,7 +787,6 @@ export default function GuiderListScreen({ navigation, route }) {
 
               {/* Payment Options */}
               <View style={styles.paymentOptions}>
-                {/* Wallet Option (only if sufficient balance) */}
                 {userBalance >= (parseFloat(selectedService.price) || 0) ? (
                   <TouchableOpacity
                     style={[styles.payButton, styles.walletButton]}
@@ -811,7 +809,6 @@ export default function GuiderListScreen({ navigation, route }) {
                   </View>
                 )}
 
-                {/* Razorpay Option (always available) */}
                 <TouchableOpacity
                   style={[styles.payButton, styles.razorpayButton]}
                   onPress={handleRazorpayForBooking}
@@ -963,7 +960,7 @@ const styles = StyleSheet.create({
   searchContainer: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 12 },
   searchInput: { flex: 1, marginLeft: 8, fontSize: 14, color: "#1e293b", padding: 0 },
   listContent: { padding: 16, paddingTop: 8 },
-  guiderCard: { backgroundColor: "#fff", borderRadius: 16, marginBottom: 12, elevation: 2, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, overflow: "hidden" },
+  guiderCard: { backgroundColor: "#fff", borderRadius: 16, marginBottom: 12, elevation: 2, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, overflow: "hidden", position: "relative" },
   cardHeader: { flexDirection: "row", padding: 16 },
   guiderImage: { width: 70, height: 70, borderRadius: 35, marginRight: 12 },
   imagePlaceholder: { backgroundColor: "#2c5a73", justifyContent: "center", alignItems: "center" },
@@ -1068,59 +1065,15 @@ const styles = StyleSheet.create({
   totalRow: { flexDirection: "row", justifyContent: "space-between", paddingTop: 8, marginTop: 8, borderTopWidth: 1, borderTopColor: "#e2e8f0" },
   totalLabel: { fontSize: 14, fontWeight: "600", color: "#1e293b" },
   totalValue: { fontSize: 16, fontWeight: "700", color: "#2c5a73" },
-  paymentOptions: {
-    marginVertical: 16,
-  },
-  payButton: {
-    borderRadius: 12,
-    overflow: "hidden",
-    marginBottom: 12,
-  },
-  payButtonGradient: {
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  payButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  walletButton: {
-    // gradient handled inline
-  },
-  razorpayButton: {
-    // gradient handled inline
-  },
-  insufficientWallet: {
-    backgroundColor: "#fee2e2",
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 12,
-    alignItems: "center",
-  },
-  insufficientText: {
-    color: "#b91c1c",
-    fontSize: 14,
-  },
-  modalActions: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 10,
-    marginBottom: 20,
-  },
-  cancelBtn: {
-    flex: 1,
-    paddingVertical: 14,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  cancelBtnText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#64748b",
-  },
+  paymentOptions: { marginVertical: 16 },
+  payButton: { borderRadius: 12, overflow: "hidden", marginBottom: 12 },
+  payButtonGradient: { paddingVertical: 14, alignItems: "center" },
+  payButtonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  insufficientWallet: { backgroundColor: "#fee2e2", padding: 12, borderRadius: 12, marginBottom: 12, alignItems: "center" },
+  insufficientText: { color: "#b91c1c", fontSize: 14 },
+  modalActions: { flexDirection: "row", justifyContent: "space-between", marginTop: 10, marginBottom: 20 },
+  cancelBtn: { flex: 1, paddingVertical: 14, borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 12, alignItems: "center" },
+  cancelBtnText: { fontSize: 15, fontWeight: "600", color: "#64748b" },
   buttonDisabled: { opacity: 0.7 },
   input: { backgroundColor: "#f8fafc", borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 12, padding: 14, fontSize: 14, color: "#1e293b" },
   promptContent: { backgroundColor: "#fff", borderRadius: 20, padding: 24, alignItems: "center", marginHorizontal: 20 },
@@ -1132,4 +1085,20 @@ const styles = StyleSheet.create({
   promptLoginBtn: { flex: 1, borderRadius: 8, overflow: "hidden" },
   promptLoginGradient: { paddingVertical: 12, alignItems: "center" },
   promptLoginText: { fontSize: 14, fontWeight: "600", color: "#fff" },
+
+  // ✅ New style for the like button
+  cardLikeButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    borderRadius: 16,
+    padding: 6,
+    zIndex: 10,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
 });

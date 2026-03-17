@@ -210,7 +210,7 @@ export default function UserMenuOverlay({ visible, onClose, onNavigate }) {
                             label="Explore Places"
                             onPress={() => {
                                 onClose();
-                                onNavigate("ExplorePlaces");
+                                onNavigate("PlaceListScreen");
                             }}
                         />
                         <MenuItem
@@ -218,7 +218,7 @@ export default function UserMenuOverlay({ visible, onClose, onNavigate }) {
                             label="Find Tour Guides"
                             onPress={() => {
                                 onClose();
-                                onNavigate("FindTourGuides");
+                                onNavigate("GuiderListScreen");
                             }}
                         />
                         <MenuItem
@@ -226,7 +226,7 @@ export default function UserMenuOverlay({ visible, onClose, onNavigate }) {
                             label="Find Photographers"
                             onPress={() => {
                                 onClose();
-                                onNavigate("FindPhotographers");
+                                onNavigate("PhotographersListScreen");
                             }}
                         />
                         <MenuItem
@@ -234,7 +234,7 @@ export default function UserMenuOverlay({ visible, onClose, onNavigate }) {
                             label="Wishlist"
                             onPress={() => {
                                 onClose();
-                                onNavigate("Wishlist");
+                                onNavigate("LikedScreen");
                             }}
                         />
                     </View>
