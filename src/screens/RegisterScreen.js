@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -10,98 +10,36 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Image,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import api from "../api/apiClient";
 
-// Firebase OTP imports
-import { FirebaseRecaptchaVerifierModal } from "expo-firebase-recaptcha";
-import { signInWithPhoneNumber } from "firebase/auth";
-import { auth, firebaseConfig } from "../firebaseConfig";
-
 export default function RegisterScreen({ navigation }) {
-  const recaptchaVerifier = useRef(null);
-
-  // Form states
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [countryCode, setCountryCode] = useState("+91");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-
-  // UI toggles
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // OTP states
-  const [otp, setOtp] = useState("");
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpVerified, setOtpVerified] = useState(false);
-  const [confirmation, setConfirmation] = useState(null);
-  const [otpLoading, setOtpLoading] = useState(false);
-
-  // Validation
+  // ✅ Simple validation - matching your working version
   const validatePhone = (number) => {
     return number.length === 10 && /^\d+$/.test(number);
   };
 
-  // 🔹 SEND OTP
-  const sendOtp = async () => {
-    if (!validatePhone(phone)) {
-      Alert.alert("Error", "Enter a valid 10-digit phone number");
-      return;
-    }
-
-    try {
-      setOtpLoading(true);
-      const phoneNumber = countryCode + phone;
-      const confirmationResult = await signInWithPhoneNumber(
-        auth,
-        phoneNumber,
-        recaptchaVerifier.current
-      );
-      setConfirmation(confirmationResult);
-      setOtpSent(true);
-      Alert.alert("OTP Sent", `Verification code sent to ${phoneNumber}`);
-    } catch (error) {
-      Alert.alert("Error", error.message);
-    } finally {
-      setOtpLoading(false);
-    }
-  };
-
-  // 🔹 VERIFY OTP
-  const verifyOtp = async () => {
-    if (!otp || otp.length < 6) {
-      Alert.alert("Error", "Please enter a valid 6-digit OTP");
-      return;
-    }
-
-    try {
-      setOtpLoading(true);
-      await confirmation.confirm(otp);
-      setOtpVerified(true);
-      Alert.alert("Success", "Phone number verified successfully");
-    } catch {
-      Alert.alert("Invalid OTP", "Please check the code and try again");
-    } finally {
-      setOtpLoading(false);
-    }
-  };
-
-  // 🔹 REGISTER
   const handleRegister = async () => {
-    if (!otpVerified) {
-      Alert.alert("Error", "Please verify your phone number first");
-      return;
-    }
-
+    // Basic validation - matching your working version
     if (!name || !username || !phone || !password) {
       Alert.alert("Error", "All fields are required");
+      return;
+    }
+
+    if (phone.length !== 10) {
+      Alert.alert("Error", "Phone number must be 10 digits");
       return;
     }
 
@@ -117,6 +55,8 @@ export default function RegisterScreen({ navigation }) {
 
     try {
       setLoading(true);
+      
+      // ✅ Simple register - matching your working version
       const res = await api.post("/user/register", {
         name,
         username,
@@ -125,9 +65,11 @@ export default function RegisterScreen({ navigation }) {
         password,
       });
 
+      console.log("Register Response:", res.data);
+
       if (res.data.status) {
         Alert.alert(
-          "Success",
+          "Success", 
           "Registered successfully! Please login with your credentials.",
           [{ text: "OK", onPress: () => navigation.navigate("Login") }]
         );
@@ -136,42 +78,38 @@ export default function RegisterScreen({ navigation }) {
       }
     } catch (err) {
       console.log("Register API Error:", err.response?.data || err.message);
-      Alert.alert("Error", err.response?.data?.message || "Something went wrong, try again");
+      
+      // Handle 401 error specifically
+      if (err.response?.status === 401) {
+        Alert.alert("Error", "Authentication failed. Please try again.");
+      } else {
+        Alert.alert("Error", err.response?.data?.message || "Something went wrong, try again");
+      }
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <LinearGradient
+    <LinearGradient 
       colors={["#1e3c4f", "#2c5a73", "#3b7a8f"]}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={styles.container}
     >
-      {/* Firebase reCAPTCHA modal – must be placed here */}
-      <FirebaseRecaptchaVerifierModal
-        ref={recaptchaVerifier}
-        firebaseConfig={firebaseConfig}
-      />
-
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.container}
       >
-        <ScrollView
+        <ScrollView 
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.card}>
-            {/* Logo */}
+            {/* Icon */}
             <View style={styles.iconContainer}>
               <View style={styles.iconBackground}>
-                <Image
-                  source={require("../../assets/images/logo.png")}
-                  style={styles.logoImage}
-                  resizeMode="contain"
-                />
+                <Ionicons name="person-add" size={40} color="#fff" />
               </View>
             </View>
 
@@ -217,7 +155,7 @@ export default function RegisterScreen({ navigation }) {
                   maxLength={4}
                 />
               </View>
-
+              
               <View style={[styles.inputContainer, styles.phoneContainer]}>
                 <Ionicons name="call-outline" size={20} color="#2c5a73" style={styles.inputIcon} />
                 <TextInput
@@ -229,74 +167,13 @@ export default function RegisterScreen({ navigation }) {
                   keyboardType="phone-pad"
                   maxLength={10}
                 />
-                {phone.length === 10 && !otpVerified && (
+                {phone.length === 10 && (
                   <Ionicons name="checkmark-circle" size={20} color="#10B981" style={styles.inputRightIcon} />
-                )}
-                {otpVerified && (
-                  <Ionicons name="checkmark-done-circle" size={20} color="#10B981" style={styles.inputRightIcon} />
                 )}
               </View>
             </View>
 
-            {/* OTP Section */}
-            {!otpSent && (
-              <TouchableOpacity
-                style={[styles.button, otpLoading && styles.buttonDisabled]}
-                onPress={sendOtp}
-                disabled={otpLoading}
-              >
-                <LinearGradient
-                  colors={['#2c5a73', '#1e3c4f']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.buttonGradient}
-                >
-                  {otpLoading ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={styles.buttonText}>SEND OTP</Text>
-                  )}
-                </LinearGradient>
-              </TouchableOpacity>
-            )}
-
-            {otpSent && !otpVerified && (
-              <>
-                <View style={styles.inputContainer}>
-                  <Ionicons name="key-outline" size={20} color="#2c5a73" style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Enter 6-digit OTP"
-                    placeholderTextColor="#94a3b8"
-                    value={otp}
-                    onChangeText={setOtp}
-                    keyboardType="number-pad"
-                    maxLength={6}
-                  />
-                </View>
-
-                <TouchableOpacity
-                  style={[styles.button, otpLoading && styles.buttonDisabled]}
-                  onPress={verifyOtp}
-                  disabled={otpLoading}
-                >
-                  <LinearGradient
-                    colors={['#2c5a73', '#1e3c4f']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.buttonGradient}
-                  >
-                    {otpLoading ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <Text style={styles.buttonText}>VERIFY OTP</Text>
-                    )}
-                  </LinearGradient>
-                </TouchableOpacity>
-              </>
-            )}
-
-            {/* Password Fields (always visible) */}
+            {/* Password */}
             <View style={styles.inputContainer}>
               <Ionicons name="lock-closed-outline" size={20} color="#2c5a73" style={styles.inputIcon} />
               <TextInput
@@ -308,14 +185,15 @@ export default function RegisterScreen({ navigation }) {
                 onChangeText={setPassword}
               />
               <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
-                <Ionicons
-                  name={showPassword ? "eye-off-outline" : "eye-outline"}
-                  size={20}
-                  color="#2c5a73"
+                <Ionicons 
+                  name={showPassword ? "eye-off-outline" : "eye-outline"} 
+                  size={20} 
+                  color="#2c5a73" 
                 />
               </TouchableOpacity>
             </View>
 
+            {/* Confirm Password */}
             <View style={styles.inputContainer}>
               <Ionicons name="lock-closed-outline" size={20} color="#2c5a73" style={styles.inputIcon} />
               <TextInput
@@ -327,10 +205,10 @@ export default function RegisterScreen({ navigation }) {
                 onChangeText={setConfirmPassword}
               />
               <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={styles.eyeIcon}>
-                <Ionicons
-                  name={showConfirmPassword ? "eye-off-outline" : "eye-outline"}
-                  size={20}
-                  color="#2c5a73"
+                <Ionicons 
+                  name={showConfirmPassword ? "eye-off-outline" : "eye-outline"} 
+                  size={20} 
+                  color="#2c5a73" 
                 />
               </TouchableOpacity>
             </View>
@@ -342,11 +220,11 @@ export default function RegisterScreen({ navigation }) {
               <Text style={styles.requirementItem}>✓ Match in both fields</Text>
             </View>
 
-            {/* Register Button (disabled until OTP verified) */}
-            <TouchableOpacity
-              style={[styles.button, (!otpVerified || loading) && styles.buttonDisabled]}
+            {/* Register Button */}
+            <TouchableOpacity 
+              style={[styles.button, loading && styles.buttonDisabled]} 
               onPress={handleRegister}
-              disabled={!otpVerified || loading}
+              disabled={loading}
             >
               <LinearGradient
                 colors={['#2c5a73', '#1e3c4f']}
@@ -379,10 +257,12 @@ export default function RegisterScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  scroll: {
-    flexGrow: 1,
-    justifyContent: "center",
+  container: { 
+    flex: 1,
+  },
+  scroll: { 
+    flexGrow: 1, 
+    justifyContent: "center", 
     padding: 20,
   },
   card: {
@@ -400,23 +280,17 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   iconBackground: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "#fff",
-    justifyContent: "center",
-    alignItems: "center",
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#2c5a73',
+    justifyContent: 'center',
+    alignItems: 'center',
     elevation: 4,
-    shadowColor: "#000",
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
-    overflow: "hidden",
-  },
-  logoImage: {
-    width: 60,
-    height: 60,
-    resizeMode: "contain",
   },
   title: {
     fontSize: 26,
@@ -424,11 +298,11 @@ const styles = StyleSheet.create({
     color: "#1e293b",
     textAlign: "center",
   },
-  subTitle: {
-    fontSize: 14,
-    color: "#64748b",
-    textAlign: "center",
-    marginBottom: 25,
+  subTitle: { 
+    fontSize: 14, 
+    color: "#64748b", 
+    textAlign: "center", 
+    marginBottom: 25 
   },
   inputContainer: {
     flexDirection: "row",
@@ -498,7 +372,7 @@ const styles = StyleSheet.create({
   },
   button: {
     borderRadius: 14,
-    overflow: "hidden",
+    overflow: 'hidden',
     marginBottom: 15,
   },
   buttonGradient: {
@@ -506,21 +380,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   buttonDisabled: {
-    opacity: 0.6,
+    opacity: 0.7,
   },
-  buttonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
-    textAlign: "center",
+  buttonText: { 
+    color: "#fff", 
+    fontSize: 16, 
+    fontWeight: "bold", 
+    textAlign: "center" 
   },
   loginLink: {
     marginTop: 5,
     alignItems: "center",
   },
-  loginText: {
-    color: "#64748b",
-    textAlign: "center",
+  loginText: { 
+    color: "#64748b", 
+    textAlign: "center", 
     fontSize: 14,
   },
   loginBold: {

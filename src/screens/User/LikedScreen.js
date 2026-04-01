@@ -12,7 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { AuthContext } from '../../context/AuthContext';
-import { useLikes } from '../../hooks/useLikes';
+import { useLikes } from '../../context/LikesContext';
 import LikeButton from '../../components/LikeButton';
 
 const BASE_URL = 'https://localguider.sinfode.com';

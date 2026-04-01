@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
     View,
     Text,
@@ -21,7 +21,10 @@ import { API } from "../../api/endpoints";
 
 const BASE_URL = "https://localguider.sinfode.com";
 
-export default function AddPlaceScreen({ navigation }) {
+export default function AddPlaceScreen({ navigation, route }) {
+    const existingPlace = route?.params?.place;
+    const isEditing = !!existingPlace;
+
     const [loading, setLoading] = useState(false);
     const [placeName, setPlaceName] = useState("");
     const [description, setDescription] = useState("");
@@ -32,37 +35,68 @@ export default function AddPlaceScreen({ navigation }) {
     const [latitude, setLatitude] = useState("");
     const [longitude, setLongitude] = useState("");
     const [topPlace, setTopPlace] = useState(false);
-    const [featuredImage, setFeaturedImage] = useState(null);
-    const [galleryImages, setGalleryImages] = useState([]); // array of assets
+    const [featuredImage, setFeaturedImage] = useState(null);      // new image if changed
+    const [featuredImageUri, setFeaturedImageUri] = useState(null); // preview
+    const [galleryImages, setGalleryImages] = useState([]);        // only used for adding new gallery images when creating new place
+
+    // Pre‑fill if editing
+    useEffect(() => {
+        if (existingPlace) {
+            setPlaceName(existingPlace.placeName || "");
+            setDescription(existingPlace.description || "");
+            setState(existingPlace.state || "");
+            setCity(existingPlace.city || "");
+            setAddress(existingPlace.fullAddress || "");
+            setMapUrl(existingPlace.mapUrl || "");
+            setLatitude(existingPlace.latitude?.toString() || "");
+            setLongitude(existingPlace.longitude?.toString() || "");
+            setTopPlace(existingPlace.topPlace || false);
+            if (existingPlace.featuredImage) {
+                // Show the existing image as preview (no new file yet)
+                const filename = existingPlace.featuredImage.split('/').pop();
+                setFeaturedImageUri(`${BASE_URL}/api/image/download/${filename}`);
+            }
+        }
+    }, [existingPlace]);
 
     // Pick featured image (single)
     const pickFeaturedImage = async () => {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== "granted") {
+            Alert.alert("Permission needed", "Please allow access to your photo library");
+            return;
+        }
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            mediaTypes: ["images"],
             allowsEditing: true,
             aspect: [16, 9],
             quality: 0.8,
         });
-
         if (!result.canceled) {
-            setFeaturedImage(result.assets[0]);
+            const asset = result.assets[0];
+            setFeaturedImage(asset);
+            setFeaturedImageUri(asset.uri);
         }
     };
 
-    // Pick multiple gallery images
+    // Pick multiple gallery images (only used when creating new place)
     const pickGalleryImages = async () => {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== "granted") {
+            Alert.alert("Permission needed", "Please allow access to your photo library");
+            return;
+        }
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            mediaTypes: ["images"],
             allowsMultipleSelection: true,
             quality: 0.8,
         });
-
         if (!result.canceled) {
             setGalleryImages([...galleryImages, ...result.assets]);
         }
     };
 
-    // Remove an image from gallery
+    // Remove a gallery image (only used when creating new place)
     const removeGalleryImage = (index) => {
         const newImages = [...galleryImages];
         newImages.splice(index, 1);
@@ -95,7 +129,8 @@ export default function AddPlaceScreen({ navigation }) {
             Alert.alert("Error", "Valid longitude is required");
             return false;
         }
-        if (!featuredImage) {
+        // Featured image required only for new places
+        if (!isEditing && !featuredImage) {
             Alert.alert("Error", "Featured image is required");
             return false;
         }
@@ -108,7 +143,6 @@ export default function AddPlaceScreen({ navigation }) {
 
         setLoading(true);
         try {
-            // 1. Upload place with featured image
             const formData = new FormData();
             formData.append("placeName", placeName.trim());
             formData.append("description", description.trim());
@@ -119,27 +153,37 @@ export default function AddPlaceScreen({ navigation }) {
             formData.append("latitude", parseFloat(latitude).toString());
             formData.append("longitude", parseFloat(longitude).toString());
             formData.append("topPlace", topPlace.toString());
-            formData.append("featuredImage", {
-                uri: featuredImage.uri,
-                type: featuredImage.mimeType || "image/jpeg",
-                name: `featured_${Date.now()}.jpg`,
-            });
 
-            const placeResponse = await api.post(API.ADD_PLACE, formData, {
-                headers: { "Content-Type": "multipart/form-data" },
-            });
-
-            if (!placeResponse.data?.status) {
-                throw new Error(placeResponse.data?.message || "Failed to add place");
+            // If editing, add placeId
+            if (isEditing) {
+                formData.append("placeId", existingPlace.id.toString());
             }
 
-            const newPlaceId = placeResponse.data.data.id; // assuming API returns place object with id
+            // Featured image – only if a new image was selected
+            if (featuredImage) {
+                formData.append("featuredImage", {
+                    uri: featuredImage.uri,
+                    type: featuredImage.mimeType || "image/jpeg",
+                    name: `featured_${Date.now()}.jpg`,
+                });
+            }
 
-            // 2. Upload gallery images (if any)
-            if (galleryImages.length > 0) {
+            // Determine endpoint
+            const endpoint = isEditing ? API.EDIT_PLACE : API.ADD_PLACE;
+
+            // Send main place request
+            const placeResponse = await api.post(endpoint, formData);
+            if (!placeResponse.data?.status) {
+                throw new Error(placeResponse.data?.message || "Failed to save place");
+            }
+
+            const placeId = placeResponse.data.data?.id || existingPlace?.id;
+
+            // If creating a new place, upload gallery images
+            if (!isEditing && galleryImages.length > 0) {
                 for (const image of galleryImages) {
                     const imageForm = new FormData();
-                    imageForm.append("placeId", newPlaceId.toString());
+                    imageForm.append("placeId", placeId.toString());
                     imageForm.append("title", placeName.trim());
                     imageForm.append("description", description.trim());
                     imageForm.append("image", {
@@ -147,18 +191,21 @@ export default function AddPlaceScreen({ navigation }) {
                         type: image.mimeType || "image/jpeg",
                         name: `gallery_${Date.now()}.jpg`,
                     });
-
-                    await api.post(API.ADD_IMAGE, imageForm, {
-                        headers: { "Content-Type": "multipart/form-data" },
-                    });
+                    await api.post(API.ADD_IMAGE, imageForm);
                 }
             }
 
-            Alert.alert("Success", "Place added successfully!");
+            Alert.alert("Success", `Place ${isEditing ? "updated" : "added"} successfully!`);
             navigation.goBack();
         } catch (error) {
-            console.error("❌ Add place error:", error);
-            Alert.alert("Error", error.message || "Failed to add place");
+            console.error("❌ Submit error:", error);
+            let message = "Failed to save place";
+            if (error.response?.data?.message) {
+                message = error.response.data.message;
+            } else if (error.message) {
+                message = error.message;
+            }
+            Alert.alert("Error", message);
         } finally {
             setLoading(false);
         }
@@ -173,7 +220,9 @@ export default function AddPlaceScreen({ navigation }) {
                     <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
                         <Ionicons name="arrow-back" size={24} color="#fff" />
                     </TouchableOpacity>
-                    <Text style={styles.headerTitle}>Add New Place</Text>
+                    <Text style={styles.headerTitle}>
+                        {isEditing ? "Edit Place" : "Add New Place"}
+                    </Text>
                     <View style={{ width: 40 }} />
                 </View>
             </LinearGradient>
@@ -181,12 +230,14 @@ export default function AddPlaceScreen({ navigation }) {
             <ScrollView contentContainerStyle={styles.formContainer} showsVerticalScrollIndicator={false}>
                 {/* Featured Image Picker */}
                 <TouchableOpacity style={styles.imagePicker} onPress={pickFeaturedImage}>
-                    {featuredImage ? (
-                        <Image source={{ uri: featuredImage.uri }} style={styles.previewImage} />
+                    {featuredImageUri ? (
+                        <Image source={{ uri: featuredImageUri }} style={styles.previewImage} />
                     ) : (
                         <View style={styles.placeholder}>
                             <Ionicons name="camera-outline" size={40} color="#2c5a73" />
-                            <Text style={styles.placeholderText}>Tap to select featured image</Text>
+                            <Text style={styles.placeholderText}>
+                                {isEditing ? "Tap to change featured image" : "Tap to select featured image"}
+                            </Text>
                         </View>
                     )}
                 </TouchableOpacity>
@@ -298,30 +349,32 @@ export default function AddPlaceScreen({ navigation }) {
                     />
                 </View>
 
-                {/* Gallery Images Picker */}
-                <View style={styles.gallerySection}>
-                    <Text style={styles.label}>Gallery Images (optional)</Text>
-                    <TouchableOpacity style={styles.addGalleryButton} onPress={pickGalleryImages}>
-                        <Ionicons name="images-outline" size={24} color="#2c5a73" />
-                        <Text style={styles.addGalleryText}>Add multiple images</Text>
-                    </TouchableOpacity>
+                {/* Gallery Images – only shown when creating a new place */}
+                {!isEditing && (
+                    <View style={styles.gallerySection}>
+                        <Text style={styles.label}>Gallery Images (optional)</Text>
+                        <TouchableOpacity style={styles.addGalleryButton} onPress={pickGalleryImages}>
+                            <Ionicons name="images-outline" size={24} color="#2c5a73" />
+                            <Text style={styles.addGalleryText}>Add multiple images</Text>
+                        </TouchableOpacity>
 
-                    {galleryImages.length > 0 && (
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.galleryPreview}>
-                            {galleryImages.map((img, index) => (
-                                <View key={index} style={styles.galleryItem}>
-                                    <Image source={{ uri: img.uri }} style={styles.galleryImage} />
-                                    <TouchableOpacity
-                                        style={styles.removeGallery}
-                                        onPress={() => removeGalleryImage(index)}
-                                    >
-                                        <Ionicons name="close-circle" size={22} color="#EF4444" />
-                                    </TouchableOpacity>
-                                </View>
-                            ))}
-                        </ScrollView>
-                    )}
-                </View>
+                        {galleryImages.length > 0 && (
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.galleryPreview}>
+                                {galleryImages.map((img, index) => (
+                                    <View key={index} style={styles.galleryItem}>
+                                        <Image source={{ uri: img.uri }} style={styles.galleryImage} />
+                                        <TouchableOpacity
+                                            style={styles.removeGallery}
+                                            onPress={() => removeGalleryImage(index)}
+                                        >
+                                            <Ionicons name="close-circle" size={22} color="#EF4444" />
+                                        </TouchableOpacity>
+                                    </View>
+                                ))}
+                            </ScrollView>
+                        )}
+                    </View>
+                )}
 
                 {/* Submit Button */}
                 <TouchableOpacity
@@ -336,7 +389,9 @@ export default function AddPlaceScreen({ navigation }) {
                         {loading ? (
                             <ActivityIndicator size="small" color="#fff" />
                         ) : (
-                            <Text style={styles.submitText}>Add Place</Text>
+                            <Text style={styles.submitText}>
+                                {isEditing ? "Update Place" : "Add Place"}
+                            </Text>
                         )}
                     </LinearGradient>
                 </TouchableOpacity>

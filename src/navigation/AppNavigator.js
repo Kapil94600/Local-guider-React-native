@@ -1,6 +1,6 @@
 import React, { useContext } from "react";
 import { NavigationContainer } from "@react-navigation/native";
-import { createStackNavigator } from "@react-navigation/stack";
+import { createNativeStackNavigator } from "@react-navigation/native-stack"; // ✅ UPDATED
 import { AuthContext } from "../context/AuthContext";
 import { IS_ADMIN_APP } from "../appMode";
 
@@ -28,12 +28,12 @@ import TransactionHistory from "../screens/User/TransactionHistory";
 import MyBookings from "../screens/User/MyBookings";
 import AboutUs from "../screens/User/AboutUs";
 import TermsConditions from "../screens/User/TermsConditions";
+import PrivacyPolicy from "../screens/User/PrivacyPolicy";
 import HelpSupport from "../screens/User/HelpSupport";
 
 import ExplorePlaces from "../screens/User/ExplorePlaces";
 import LikedScreen from "../screens/User/LikedScreen";
 import ReviewScreen from '../screens/User/ReviewScreen';
-// For admin
 
 /* 📍 LOCATION */
 import LocationPicker from "../screens/User/LocationPicker";
@@ -43,25 +43,32 @@ import MapSelectScreen from "../screens/User/MapSelectScreen";
 /* 📸 PHOTOGRAPHERS */
 import PhotographersListScreen from "../screens/User/PhotographersListScreen";
 
-/* 🎭 ROLES - ADD THESE SCREENS */
+/* 🎭 ROLES */
 import RoleRequestScreen from "../screens/RoleRequestScreen";
 import GuiderRequestScreen from "../screens/User/GuiderRequestScreen";
 import PhotographerRequest from "../screens/User/PhotographerRequest";
 import GuiderDashboard from "../screens/GuiderDashboard";
+import GuiderNotifications from "../screens/GuiderNotifications";
 import PhotographerDashboard from "../screens/PhotographerDashboard";
 
 /* 👑 ADMIN */
 import AdminStack from "./AdminStack";
 
-const Stack = createStackNavigator();
+const Stack = createNativeStackNavigator(); // ✅ UPDATED
 
 export default function AppNavigator() {
   const { user } = useContext(AuthContext);
 
   return (
     <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {/* 🔐 AUTH FLOW */}
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: false,
+          animation: "fade",        // ✅ smooth transition
+          animationDuration: 200,   // ✅ fast open
+          gestureEnabled: false,    // ✅ reduce lag
+        }}
+      >
         {!user ? (
           <>
             <Stack.Screen name="Login" component={LoginScreen} />
@@ -70,130 +77,61 @@ export default function AppNavigator() {
             )}
           </>
         ) : IS_ADMIN_APP ? (
-          // 👑 Admin APK → always AdminStack
           <Stack.Screen name="Admin" component={AdminStack} />
         ) : user.role === "ADMIN" ? (
-          // 👑 User APK but role = ADMIN
           <Stack.Screen name="Admin" component={AdminStack} />
-        ) : user.role === "GUIDER" ? (
-          // 🧭 Guider role
-          <Stack.Screen name="GuiderDashboard" component={GuiderDashboard} />
-        ) : user.role === "PHOTOGRAPHER" ? (
-          // 📸 Photographer role
-          <Stack.Screen
-            name="PhotographerDashboard"
-            component={PhotographerDashboard}
-          />
+        ) :user.role === "GUIDER" ? (
+  <>
+    <Stack.Screen name="GuiderDashboard" component={GuiderDashboard} />
+    <Stack.Screen name="GuiderNotifications" component={GuiderNotifications} />
+  </>
+) : user.role === "PHOTOGRAPHER" ? (
+          <Stack.Screen name="PhotographerDashboard" component={PhotographerDashboard} />
         ) : (
-          // 👤 Normal User (can send role request)
           <>
             <Stack.Screen name="UserDashboard" component={UserDashboard} />
-            <Stack.Screen name="ProfessionalDetails" component={ProfessionalDetailsScreen} options={{ headerShown: false }} />
-<Stack.Screen name="ReviewScreen" component={ReviewScreen} options={{ headerShown: false }} />
-            {/* 👤 PROFILE */}
+            <Stack.Screen name="ProfessionalDetails" component={ProfessionalDetailsScreen} />
+            <Stack.Screen name="ReviewScreen" component={ReviewScreen} />
+
             <Stack.Screen name="UserMenu" component={UserMenuScreen} />
             <Stack.Screen name="UserProfile" component={UserProfileScreen} />
-            <Stack.Screen
-              name="UserEditProfile"
-              component={UserEditProfileScreen}
-            />
-            <Stack.Screen
-              name="ProfileUpdate"
-              component={ProfileUpdateScreen}
-            />
-            <Stack.Screen
-              name="ProfilePicture"
-              component={ProfilePictureScreen}
-            />
-            <Stack.Screen
-              name="GuiderListScreen"
-              component={GuiderListScreen}
-            />
-            <Stack.Screen
-              name="PhotographersListScreen"
-              component={PhotographersListScreen}
-            />
-           <Stack.Screen name="Liked" component={LikedScreen} options={{ headerShown: false }} />
-<Stack.Screen name="LikedScreen" component={LikedScreen} options={{ headerShown: false }} />
-            {/* ✅ FIXED: Changed from "PlaceDetailsScreen" to "PlaceDetails" */}
-            <Stack.Screen
-              name="PlaceDetails"
-              component={PlaceDetailsScreen}
-            />
-            
-            <Stack.Screen
-              name="PlaceListScreen"
-              component={PlaceListScreen}
-            />
-            <Stack.Screen
-              name="TopPlacesScreen"
-              component={TopPlacesScreen}
-            />
-            <Stack.Screen
-              name="TopGuidersScreen"
-              component={TopGuidersScreen}
-            />
-            
-            {/* 💰 WALLET */}
+            <Stack.Screen name="UserEditProfile" component={UserEditProfileScreen} />
+            <Stack.Screen name="ProfileUpdate" component={ProfileUpdateScreen} />
+            <Stack.Screen name="ProfilePicture" component={ProfilePictureScreen} />
+
+            <Stack.Screen name="GuiderListScreen" component={GuiderListScreen} />
+            <Stack.Screen name="PhotographersListScreen" component={PhotographersListScreen} />
+
+            <Stack.Screen name="Liked" component={LikedScreen} />
+            <Stack.Screen name="LikedScreen" component={LikedScreen} />
+
+            <Stack.Screen name="PlaceDetails" component={PlaceDetailsScreen} />
+            <Stack.Screen name="PlaceListScreen" component={PlaceListScreen} />
+            <Stack.Screen name="TopPlacesScreen" component={TopPlacesScreen} />
+            <Stack.Screen name="TopGuidersScreen" component={TopGuidersScreen} />
+
             <Stack.Screen name="AddBalance" component={AddBalanceScreen} />
 
-            {/* 🎭 ROLE REQUEST */}
             <Stack.Screen name="RoleRequest" component={RoleRequestScreen} />
-            <Stack.Screen
-              name="GuiderRequestScreen"
-              component={GuiderRequestScreen}
-              options={{ title: "Become a Guider", headerShown: false }}
-            />
-            <Stack.Screen
-              name="PhotographerRequest"
-              component={PhotographerRequest}
-              options={{ title: "Become a Photographer", headerShown: false }}
-            />
+            <Stack.Screen name="GuiderRequestScreen" component={GuiderRequestScreen} />
+            <Stack.Screen name="PhotographerRequest" component={PhotographerRequest} />
 
-            {/* ☎️ CONTACT */}
             <Stack.Screen name="ContactUs" component={ContactUsScreen} />
 
-            {/* 📍 LOCATION FLOW */}
             <Stack.Screen name="LocationPicker" component={LocationPicker} />
-            <Stack.Screen
-              name="LocationSearch"
-              component={LocationSearchScreen}
-            />
+            <Stack.Screen name="LocationSearch" component={LocationSearchScreen} />
             <Stack.Screen name="MapSelect" component={MapSelectScreen} />
-            
+
             <Stack.Screen name="Notifications" component={NotificationsScreen} />
-            
-            <Stack.Screen 
-              name="MyBookings" 
-              component={MyBookings} 
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen 
-              name="TransactionHistory" 
-              component={TransactionHistory} 
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen 
-              name="AboutUs" 
-              component={AboutUs} 
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen 
-              name="TermsConditions" 
-              component={TermsConditions} 
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen 
-              name="HelpSupport" 
-              component={HelpSupport} 
-              options={{ headerShown: false }}
-            />
-           
-            <Stack.Screen 
-              name="ExplorePlaces" 
-              component={ExplorePlaces} 
-              options={{ headerShown: false }}
-            />
+
+            <Stack.Screen name="MyBookings" component={MyBookings} />
+            <Stack.Screen name="TransactionHistory" component={TransactionHistory} />
+            <Stack.Screen name="AboutUs" component={AboutUs} />
+            <Stack.Screen name="TermsConditions" component={TermsConditions} />
+             <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicy} />
+            <Stack.Screen name="HelpSupport" component={HelpSupport} />
+
+            <Stack.Screen name="ExplorePlaces" component={ExplorePlaces} />
           </>
         )}
       </Stack.Navigator>

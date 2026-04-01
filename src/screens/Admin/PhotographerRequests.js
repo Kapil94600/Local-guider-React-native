@@ -170,7 +170,7 @@ const response = await api.post(
               
               const formData = new URLSearchParams();
               formData.append("photographerId", photographerId.toString());
-              formData.append("status", "DECLINED");
+              formData.append("status", "Declined");
               formData.append("reasonOfDecline", declineReason);
               
               const response = await api.post(API.RESPOND_PHOTOGRAPHER_REQUEST, formData.toString(), {

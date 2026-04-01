@@ -15,19 +15,36 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
-// No DateTimePicker needed unless you add DOB later
 
 import { AuthContext } from "../../context/AuthContext";
 import { LocationContext } from "../../context/LocationContext";
 import api from "../../api/apiClient";
 
-const BASE_URL = api.defaults.baseURL || "https://localguider.sinfode.com/api/";
+// ---------- Helper: convert server image path to base64 ----------
+const getImageBase64 = async (path) => {
+  try {
+    if (!path) return null;
 
-const getImageUrl = (path) => {
-  if (!path) return null;
-  if (path.startsWith("http")) return path;
-  const cleanPath = path.startsWith("/") ? path.slice(1) : path;
-  return `${BASE_URL}${cleanPath}`;
+    // If path is already a full URL, just return it (no conversion needed)
+    if (path.startsWith("http")) return path;
+
+    // Extract filename from path (e.g., "uploads/profile.jpg" -> "profile.jpg")
+    const filename = path.split("/").pop();
+    const url = `https://localguider.sinfode.com/api/image/download/${filename}`;
+
+    const response = await fetch(url);
+    const blob = await response.blob();
+
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    console.log("Image load error:", error);
+    return null;
+  }
 };
 
 export default function ProfileUpdateScreen({ navigation }) {
@@ -35,6 +52,8 @@ export default function ProfileUpdateScreen({ navigation }) {
   const { location } = useContext(LocationContext);
 
   const [loading, setLoading] = useState(false);
+  const [profileBase64, setProfileBase64] = useState(null); // for server image
+
   const [form, setForm] = useState({
     id: null,
     name: "",
@@ -42,10 +61,24 @@ export default function ProfileUpdateScreen({ navigation }) {
     address: "",
     latitude: "",
     longitude: "",
-    profileImage: null,
-    profileImageUrl: null,
+    profileImage: null,      // new image picked by user
+    profileImageUrl: null,   // preview URI for new image
   });
 
+  // ---------- Load existing profile image ----------
+  useEffect(() => {
+    const loadImage = async () => {
+      // Use either user.profile or user.profilePicture (same as form init)
+      const imagePath = user?.profile || user?.profilePicture;
+      if (imagePath) {
+        const base64 = await getImageBase64(imagePath);
+        setProfileBase64(base64);
+      }
+    };
+    loadImage();
+  }, [user]);
+
+  // ---------- Initialize form fields ----------
   useEffect(() => {
     if (user) {
       const userId = user.id || user.user_Id || user.userId;
@@ -57,11 +90,12 @@ export default function ProfileUpdateScreen({ navigation }) {
         latitude: user.latitude?.toString() || location?.latitude?.toString() || "",
         longitude: user.longitude?.toString() || location?.longitude?.toString() || "",
         profileImage: null,
-        profileImageUrl: user.profile || user.profilePicture || null,
+        profileImageUrl: null,
       });
     }
   }, [user, location]);
 
+  // ---------- Pick new image ----------
   const pickImage = async () => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -70,12 +104,11 @@ export default function ProfileUpdateScreen({ navigation }) {
         return;
       }
 
-      // ✅ Fix deprecated MediaTypeOptions – use array of strings
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'], // or ImagePicker.MediaType.Images
+        mediaTypes: ["images"],
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.2, // 20% quality – same as Flutter
+        quality: 0.2,
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -92,7 +125,9 @@ export default function ProfileUpdateScreen({ navigation }) {
     }
   };
 
+  // ---------- Submit update ----------
   const handleUpdate = async () => {
+    // Basic validation
     if (!form.name?.trim()) {
       Alert.alert("Validation Error", "Please enter name.");
       return;
@@ -106,62 +141,57 @@ export default function ProfileUpdateScreen({ navigation }) {
       return;
     }
 
+    const userId = form.id;
+    if (!userId) {
+      Alert.alert("Error", "User ID not found. Please login again.");
+      return;
+    }
+
     try {
       setLoading(true);
 
-      const userId = form.id;
-      if (!userId) {
-        Alert.alert("Error", "User ID not found. Please login again.");
-        return;
-      }
-
       const formData = new FormData();
-      formData.append("userId", userId.toString());
+      formData.append("userId", String(userId));
       formData.append("name", form.name);
       formData.append("email", form.email);
       formData.append("address", form.address);
       if (form.latitude) formData.append("latitude", form.latitude);
       if (form.longitude) formData.append("longitude", form.longitude);
 
+      // Add image if user picked a new one
       if (form.profileImage) {
-        const imageUri = form.profileImage.uri;
-        const filename = imageUri.split("/").pop() || `profile_${Date.now()}.jpg`;
-        const mimeType = form.profileImage.mimeType || "image/jpeg";
         formData.append("profile", {
-          uri: imageUri,
-          type: mimeType,
-          name: filename,
+          uri: form.profileImage.uri,
+          type: "image/jpeg",
+          name: "profile.jpg",
         });
       }
 
-      console.log("📤 Sending update request");
+      console.log("📤 Sending update request...");
 
-      const response = await api.post("/user/update_profile", formData, {
-        timeout: 60000,
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      const response = await api.post("/user/update_profile", formData);
 
-      console.log("✅ Update Response:", response.data);
+      console.log("✅ Response:", response.data);
 
       if (response.data?.success === true || response.data?.status === true) {
         Alert.alert("Success", "Profile updated successfully", [
           { text: "OK", onPress: () => navigation.goBack() },
         ]);
 
-        if (refreshUserDean) {
-          await refreshUserDean();
-        }
+        // Refresh user context so the new image appears elsewhere
+        if (refreshUserDean) await refreshUserDean();
       } else {
         Alert.alert("Failed", response.data?.message || "Profile update failed");
       }
     } catch (err) {
       console.error("❌ Update error:", err);
+
       if (err.response) {
         Alert.alert("Error", err.response.data?.message || "Server error");
       } else if (err.request) {
         Alert.alert(
           "Network Error",
-          "Could not connect to server. Please check your internet connection."
+          "Could not connect to server. Check your internet connection."
         );
       } else {
         Alert.alert("Error", err.message || "Something went wrong");
@@ -171,6 +201,7 @@ export default function ProfileUpdateScreen({ navigation }) {
     }
   };
 
+  // ---------- UI ----------
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -197,10 +228,13 @@ export default function ProfileUpdateScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
+        {/* Image Section */}
         <View style={styles.imageSection}>
           <TouchableOpacity onPress={pickImage} style={styles.imageContainer} disabled={loading}>
             {form.profileImageUrl ? (
               <Image source={{ uri: form.profileImageUrl }} style={styles.profileImage} />
+            ) : profileBase64 ? (
+              <Image source={{ uri: profileBase64 }} style={styles.profileImage} />
             ) : (
               <View style={styles.imagePlaceholder}>
                 <Ionicons name="person" size={40} color="#94a3b8" />
@@ -218,6 +252,7 @@ export default function ProfileUpdateScreen({ navigation }) {
           )}
         </View>
 
+        {/* Personal Information Card */}
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Personal Information</Text>
 
@@ -288,6 +323,7 @@ export default function ProfileUpdateScreen({ navigation }) {
   );
 }
 
+// ---------- Reusable Input Component ----------
 const Input = ({ label, value, onChangeText, icon, keyboard, multiline }) => (
   <View style={styles.inputWrapper}>
     <Text style={styles.label}>{label}</Text>
@@ -306,6 +342,7 @@ const Input = ({ label, value, onChangeText, icon, keyboard, multiline }) => (
   </View>
 );
 
+// ---------- Styles (unchanged) ----------
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f8fafc" },
   header: {

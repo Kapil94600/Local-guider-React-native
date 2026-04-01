@@ -24,11 +24,12 @@ import api from "../../api/apiClient";
 import { API } from "../../api/endpoints";
 import * as FileSystem from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ImagePicker from 'expo-image-picker';
 
 const { width } = Dimensions.get("window");
 const BASE_URL = "https://localguider.sinfode.com";
 
-// Get image URL from filename
+// Helper: get image URL
 const getImageUrl = (path) => {
     if (!path) return null;
     if (path.startsWith("http")) return path;
@@ -36,7 +37,7 @@ const getImageUrl = (path) => {
     return `${BASE_URL}/api/image/download/${cleanPath}`;
 };
 
-// Image Component for Places
+// Image Component for places (featured image)
 const PlaceImage = ({ imagePath, style }) => {
     const [imageUrl, setImageUrl] = useState(null);
     const [error, setError] = useState(false);
@@ -67,6 +68,24 @@ const PlaceImage = ({ imagePath, style }) => {
     );
 };
 
+// Image gallery item component (for modal)
+const GalleryImage = ({ uri, onDelete, isDeleting }) => (
+    <View style={styles.galleryImageContainer}>
+        <Image source={{ uri }} style={styles.galleryImage} />
+        <TouchableOpacity
+            style={styles.deleteGalleryImage}
+            onPress={onDelete}
+            disabled={isDeleting}
+        >
+            {isDeleting ? (
+                <ActivityIndicator size="small" color="#fff" />
+            ) : (
+                <Ionicons name="close-circle" size={24} color="#EF4444" />
+            )}
+        </TouchableOpacity>
+    </View>
+);
+
 export default function PlaceList({ navigation }) {
     const { user: currentUser } = useContext(AuthContext);
     const [places, setPlaces] = useState([]);
@@ -78,7 +97,13 @@ export default function PlaceList({ navigation }) {
     const [actionLoading, setActionLoading] = useState(false);
     const [downloading, setDownloading] = useState(false);
 
-    // Fetch places from API
+    // Gallery images state
+    const [galleryImages, setGalleryImages] = useState([]);
+    const [loadingGallery, setLoadingGallery] = useState(false);
+    const [uploading, setUploading] = useState(false);
+    const [deletingImageId, setDeletingImageId] = useState(null);
+
+    // Fetch places
     const fetchPlaces = async () => {
         try {
             setLoading(true);
@@ -86,7 +111,6 @@ export default function PlaceList({ navigation }) {
                 page: 1,
                 perPage: 100,
             });
-
             const responseData = response.data || {};
             const placesData = responseData.data || [];
             setPlaces(placesData);
@@ -99,6 +123,29 @@ export default function PlaceList({ navigation }) {
         }
     };
 
+    // Fetch gallery images for selected place
+    const fetchGalleryImages = async (placeId) => {
+        try {
+            setLoadingGallery(true);
+            const formData = new URLSearchParams();
+            formData.append('placeId', placeId.toString());
+            const response = await api.post(API.ALL_IMAGES_BY_ID, formData.toString(), {
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+            });
+            if (response.data?.status) {
+                const images = response.data.data || [];
+                setGalleryImages(images);
+            } else {
+                setGalleryImages([]);
+            }
+        } catch (error) {
+            console.error("Error fetching gallery:", error);
+            setGalleryImages([]);
+        } finally {
+            setLoadingGallery(false);
+        }
+    };
+
     useEffect(() => {
         fetchPlaces();
     }, []);
@@ -108,10 +155,8 @@ export default function PlaceList({ navigation }) {
         await fetchPlaces();
     };
 
-    // Filter places (only by search, no top filter)
     const getFilteredPlaces = () => {
         let filtered = places;
-
         if (searchQuery) {
             filtered = filtered.filter(place =>
                 place.placeName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -119,16 +164,16 @@ export default function PlaceList({ navigation }) {
                 place.state?.toLowerCase().includes(searchQuery.toLowerCase())
             );
         }
-
         return filtered;
     };
 
-    const showPlaceDetails = (place) => {
+    const showPlaceDetails = async (place) => {
         setSelectedPlace(place);
         setDetailsModalVisible(true);
+        await fetchGalleryImages(place.id);
     };
 
-    // Delete place (admin function)
+    // Delete place
     const deletePlace = async (placeId, placeName) => {
         Alert.alert(
             "Delete Place",
@@ -141,7 +186,9 @@ export default function PlaceList({ navigation }) {
                     onPress: async () => {
                         try {
                             setActionLoading(true);
-                            const response = await api.post(API.DELETE_PLACE, { placeId });
+                            const response = await api.post(API.DELETE_PLACE, null, {
+                                params: { placeId }
+                            });
                             if (response.data?.status) {
                                 Alert.alert("Success", "Place deleted successfully!");
                                 setDetailsModalVisible(false);
@@ -160,7 +207,83 @@ export default function PlaceList({ navigation }) {
         );
     };
 
-    // ✅ Download places as Excel file
+    // Delete gallery image
+    const deleteGalleryImage = async (imageId) => {
+        Alert.alert(
+            "Delete Image",
+            "Are you sure you want to remove this image?",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: async () => {
+                        try {
+                            setDeletingImageId(imageId);
+                            const formData = new URLSearchParams();
+                            formData.append("imageId", imageId.toString());
+                            const response = await api.post(API.DELETE_IMAGE, formData.toString(), {
+                                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+                            });
+                            if (response.data?.status) {
+                                Alert.alert("Success", "Image removed");
+                                // Refresh gallery
+                                await fetchGalleryImages(selectedPlace.id);
+                            } else {
+                                Alert.alert("Error", response.data?.message || "Failed to delete image");
+                            }
+                        } catch (error) {
+                            Alert.alert("Error", error.response?.data?.message || "Failed to delete image");
+                        } finally {
+                            setDeletingImageId(null);
+                        }
+                    },
+                },
+            ]
+        );
+    };
+
+    // Add new images to gallery
+    const addGalleryImages = async () => {
+        try {
+            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('Permission needed', 'Please allow access to your photo library');
+                return;
+            }
+
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ['images'],
+                allowsMultipleSelection: true,
+                quality: 0.7,
+            });
+
+            if (!result.canceled && result.assets.length > 0) {
+                setUploading(true);
+                for (const asset of result.assets) {
+                    const formData = new FormData();
+                    formData.append('placeId', selectedPlace.id.toString());
+                    formData.append('image', {
+                        uri: asset.uri,
+                        type: 'image/jpeg',
+                        name: `place_${selectedPlace.id}_${Date.now()}.jpg`,
+                    });
+                    await api.post(API.ADD_IMAGE, formData, {
+                        headers: { 'Content-Type': 'multipart/form-data' },
+                    });
+                }
+                Alert.alert("Success", `${result.assets.length} image(s) uploaded`);
+                await fetchGalleryImages(selectedPlace.id);
+            }
+        } catch (error) {
+            console.error("Upload error:", error);
+            Alert.alert("Error", "Failed to upload images");
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    // Download places
     const downloadPlaces = async () => {
         try {
             setDownloading(true);
@@ -169,20 +292,12 @@ export default function PlaceList({ navigation }) {
                 Alert.alert('Error', 'No authentication token');
                 return;
             }
-
             const url = `${BASE_URL}/api/download/places`;
             const fileUri = FileSystem.documentDirectory + 'places.xlsx';
-
             const downloadRes = await FileSystem.downloadAsync(url, fileUri, {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                },
+                headers: { 'Authorization': `Bearer ${token}` },
             });
-
-            if (downloadRes.status !== 200) {
-                throw new Error('Download failed');
-            }
-
+            if (downloadRes.status !== 200) throw new Error('Download failed');
             Alert.alert('Success', `File saved to:\n${fileUri}`);
         } catch (error) {
             console.error('Download error:', error);
@@ -192,130 +307,85 @@ export default function PlaceList({ navigation }) {
         }
     };
 
-    const renderPlaceItem = ({ item }) => {
-        return (
-            <TouchableOpacity
-                style={styles.card}
-                onPress={() => showPlaceDetails(item)}
-                activeOpacity={0.9}
-            >
-                <LinearGradient
-                    colors={['#ffffff', '#f8fafc']}
-                    style={styles.cardGradient}
-                >
-                    <View style={styles.cardHeader}>
-                        <PlaceImage
-                            imagePath={item.featuredImage}
-                            style={styles.avatar}
-                        />
-
-                        <View style={styles.placeInfo}>
-                            <Text style={styles.placeName} numberOfLines={1}>
-                                {item.placeName || "Unnamed Place"}
-                            </Text>
-                            <View style={styles.locationRow}>
-                                <Ionicons name="location-outline" size={12} color="#64748b" />
-                                <Text style={styles.locationText} numberOfLines={1}>
-                                    {item.city}, {item.state}
-                                </Text>
-                            </View>
-                            <View style={styles.ratingRow}>
-                                <Ionicons name="star" size={12} color="#FFD700" />
-                                <Text style={styles.ratingText}>
-                                    {item.rating > 0 ? item.rating.toFixed(1) : "New"}
-                                </Text>
-                                <Ionicons name="eye-outline" size={12} color="#64748b" style={{ marginLeft: 8 }} />
-                                <Text style={styles.viewText}>{item.views || 0} views</Text>
-                            </View>
+    const renderPlaceItem = ({ item }) => (
+        <TouchableOpacity
+            style={styles.card}
+            onPress={() => showPlaceDetails(item)}
+            activeOpacity={0.9}
+        >
+            <LinearGradient colors={['#ffffff', '#f8fafc']} style={styles.cardGradient}>
+                <View style={styles.cardHeader}>
+                    <PlaceImage imagePath={item.featuredImage} style={styles.avatar} />
+                    <View style={styles.placeInfo}>
+                        <Text style={styles.placeName} numberOfLines={1}>{item.placeName || "Unnamed Place"}</Text>
+                        <View style={styles.locationRow}>
+                            <Ionicons name="location-outline" size={12} color="#64748b" />
+                            <Text style={styles.locationText} numberOfLines={1}>{item.city}, {item.state}</Text>
                         </View>
-
-                        {item.topPlace && (
-                            <View style={styles.topBadge}>
-                                <Ionicons name="star" size={12} color="#F59E0B" />
-                                <Text style={styles.topText}>Top</Text>
-                            </View>
-                        )}
-                    </View>
-
-                    <View style={styles.cardFooter}>
-                        <View style={styles.footerLeft}>
-                            <Text style={styles.idText}>ID: {item.id}</Text>
-                        </View>
-                        <View style={styles.dateContainer}>
-                            <Ionicons name="calendar-outline" size={12} color="#64748b" />
-                            <Text style={styles.dateText}>
-                                {item.createdOn ? new Date(item.createdOn).toLocaleDateString() : "N/A"}
-                            </Text>
+                        <View style={styles.ratingRow}>
+                            <Ionicons name="star" size={12} color="#FFD700" />
+                            <Text style={styles.ratingText}>{item.rating > 0 ? item.rating.toFixed(1) : "New"}</Text>
+                            <Ionicons name="eye-outline" size={12} color="#64748b" style={{ marginLeft: 8 }} />
+                            <Text style={styles.viewText}>{item.views || 0} views</Text>
                         </View>
                     </View>
-
-                    <View style={styles.quickActions}>
-                        <TouchableOpacity
-                            style={styles.actionButton}
-                            onPress={() => showPlaceDetails(item)}
-                        >
-                            <Ionicons name="eye" size={18} color="#2c5a73" />
-                            <Text style={styles.actionText}>View</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                            style={[styles.actionButton, styles.deleteButton]}
-                            onPress={() => deletePlace(item.id, item.placeName)}
-                        >
-                            <Ionicons name="trash-outline" size={18} color="#EF4444" />
-                            <Text style={[styles.actionText, styles.deleteText]}>Delete</Text>
-                        </TouchableOpacity>
+                    {item.topPlace && (
+                        <View style={styles.topBadge}>
+                            <Ionicons name="star" size={12} color="#F59E0B" />
+                            <Text style={styles.topText}>Top</Text>
+                        </View>
+                    )}
+                </View>
+                <View style={styles.cardFooter}>
+                    <View style={styles.footerLeft}>
+                        <Text style={styles.idText}>ID: {item.id}</Text>
                     </View>
-                </LinearGradient>
-            </TouchableOpacity>
-        );
-    };
+                    <View style={styles.dateContainer}>
+                        <Ionicons name="calendar-outline" size={12} color="#64748b" />
+                        <Text style={styles.dateText}>
+                            {item.createdOn ? new Date(item.createdOn).toLocaleDateString() : "N/A"}
+                        </Text>
+                    </View>
+                </View>
+                <View style={styles.quickActions}>
+                    <TouchableOpacity style={styles.actionButton} onPress={() => showPlaceDetails(item)}>
+                        <Ionicons name="eye" size={18} color="#2c5a73" />
+                        <Text style={styles.actionText}>View</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate("AddPlaceScreen", { place: item })}>
+                        <Ionicons name="create-outline" size={18} color="#3B82F6" />
+                        <Text style={styles.actionText}>Edit</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.actionButton, styles.deleteButton]} onPress={() => deletePlace(item.id, item.placeName)}>
+                        <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                        <Text style={[styles.actionText, styles.deleteText]}>Delete</Text>
+                    </TouchableOpacity>
+                </View>
+            </LinearGradient>
+        </TouchableOpacity>
+    );
 
     const filteredPlaces = getFilteredPlaces();
 
     return (
         <SafeAreaView style={styles.container}>
             <StatusBar backgroundColor="#2c5a73" barStyle="light-content" />
-
-            {/* HEADER */}
-            <LinearGradient
-                colors={['#2c5a73', '#1e3c4f']}
-                style={styles.header}
-            >
+            <LinearGradient colors={['#2c5a73', '#1e3c4f']} style={styles.header}>
                 <View style={styles.headerTop}>
-                    <TouchableOpacity
-                        style={styles.menuButton}
-                        onPress={() => navigation.goBack()}
-                    >
+                    <TouchableOpacity style={styles.menuButton} onPress={() => navigation.goBack()}>
                         <Ionicons name="arrow-back" size={24} color="#fff" />
                     </TouchableOpacity>
-
                     <View style={styles.headerCenter}>
                         <Text style={styles.greeting}>Explore Places</Text>
                         <Text style={styles.subtitle}>Tourist Destinations</Text>
                     </View>
-
                     <View style={styles.headerRight}>
-                        {/* Add Place Button */}
-                        <TouchableOpacity
-                            style={styles.addButton}
-                            onPress={() => navigation.navigate("AddPlaceScreen")}
-                        >
+                        <TouchableOpacity style={styles.addButton} onPress={() => navigation.navigate("AddPlaceScreen")}>
                             <Ionicons name="add" size={22} color="#fff" />
                         </TouchableOpacity>
-
-                        <TouchableOpacity
-                            style={styles.downloadButton}
-                            onPress={downloadPlaces}
-                            disabled={downloading}
-                        >
-                            {downloading ? (
-                                <ActivityIndicator size="small" color="#fff" />
-                            ) : (
-                                <Ionicons name="download-outline" size={22} color="#fff" />
-                            )}
+                        <TouchableOpacity style={styles.downloadButton} onPress={downloadPlaces} disabled={downloading}>
+                            {downloading ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="download-outline" size={22} color="#fff" />}
                         </TouchableOpacity>
-
                         <View style={styles.countContainer}>
                             <Text style={styles.countNumber}>{filteredPlaces.length}</Text>
                             <Text style={styles.countLabel}>Places</Text>
@@ -324,7 +394,6 @@ export default function PlaceList({ navigation }) {
                 </View>
             </LinearGradient>
 
-            {/* SEARCH BAR */}
             <View style={styles.searchContainer}>
                 <Ionicons name="search" size={20} color="#94a3b8" />
                 <TextInput
@@ -341,7 +410,6 @@ export default function PlaceList({ navigation }) {
                 )}
             </View>
 
-            {/* PLACES LIST */}
             {loading ? (
                 <View style={styles.loadingContainer}>
                     <ActivityIndicator size="large" color="#2c5a73" />
@@ -352,35 +420,21 @@ export default function PlaceList({ navigation }) {
                     data={filteredPlaces}
                     renderItem={renderPlaceItem}
                     keyExtractor={item => item.id?.toString()}
-                    refreshControl={
-                        <RefreshControl
-                            refreshing={refreshing}
-                            onRefresh={onRefresh}
-                            colors={["#2c5a73"]}
-                            tintColor="#2c5a73"
-                        />
-                    }
+                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#2c5a73"]} tintColor="#2c5a73" />}
                     contentContainerStyle={styles.listContainer}
                     showsVerticalScrollIndicator={false}
                     ListEmptyComponent={
                         <View style={styles.emptyContainer}>
                             <Ionicons name="map-outline" size={80} color="#2c5a73" />
                             <Text style={styles.emptyTitle}>No places found</Text>
-                            <Text style={styles.emptySubtitle}>
-                                {searchQuery ? "Try a different search" : "Add places to get started"}
-                            </Text>
+                            <Text style={styles.emptySubtitle}>{searchQuery ? "Try a different search" : "Add places to get started"}</Text>
                         </View>
                     }
                 />
             )}
 
-            {/* PLACE DETAILS MODAL (unchanged) */}
-            <Modal
-                animationType="slide"
-                transparent={true}
-                visible={detailsModalVisible}
-                onRequestClose={() => setDetailsModalVisible(false)}
-            >
+            {/* DETAILS MODAL (with gallery) */}
+            <Modal animationType="slide" transparent={true} visible={detailsModalVisible} onRequestClose={() => setDetailsModalVisible(false)}>
                 <BlurView intensity={20} style={StyleSheet.absoluteFill} />
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
@@ -395,13 +449,9 @@ export default function PlaceList({ navigation }) {
                             <ScrollView showsVerticalScrollIndicator={false}>
                                 <View style={styles.modalProfileSection}>
                                     <View style={styles.modalAvatarContainer}>
-                                        <PlaceImage
-                                            imagePath={selectedPlace.featuredImage}
-                                            style={styles.modalAvatar}
-                                        />
+                                        <PlaceImage imagePath={selectedPlace.featuredImage} style={styles.modalAvatar} />
                                     </View>
                                     <Text style={styles.modalPlaceName}>{selectedPlace.placeName}</Text>
-
                                     <View style={styles.modalPlaceMeta}>
                                         {selectedPlace.topPlace && (
                                             <View style={[styles.modalBadge, { backgroundColor: "#F59E0B" }]}>
@@ -411,9 +461,7 @@ export default function PlaceList({ navigation }) {
                                         )}
                                         <View style={[styles.modalBadge, { backgroundColor: "#2c5a73" }]}>
                                             <Ionicons name="star" size={14} color="#FFD700" />
-                                            <Text style={styles.modalBadgeText}>
-                                                {selectedPlace.rating > 0 ? selectedPlace.rating.toFixed(1) : "New"}
-                                            </Text>
+                                            <Text style={styles.modalBadgeText}>{selectedPlace.rating > 0 ? selectedPlace.rating.toFixed(1) : "New"}</Text>
                                         </View>
                                     </View>
                                 </View>
@@ -469,20 +517,50 @@ export default function PlaceList({ navigation }) {
                                     </View>
                                 </View>
 
+                                {/* GALLERY SECTION */}
+                                <View style={styles.modalSection}>
+                                    <View style={styles.galleryHeader}>
+                                        <Text style={styles.modalSectionTitle}>Gallery</Text>
+                                        <TouchableOpacity style={styles.addGalleryButton} onPress={addGalleryImages} disabled={uploading}>
+                                            {uploading ? <ActivityIndicator size="small" color="#2c5a73" /> : <Ionicons name="add-circle" size={24} color="#2c5a73" />}
+                                        </TouchableOpacity>
+                                    </View>
+                                    {loadingGallery ? (
+                                        <ActivityIndicator size="small" color="#2c5a73" />
+                                    ) : galleryImages.length > 0 ? (
+                                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.galleryScroll}>
+                                            {galleryImages.map((img) => (
+                                                <GalleryImage
+                                                    key={img.id}
+                                                    uri={getImageUrl(img.image)}
+                                                    onDelete={() => deleteGalleryImage(img.id)}
+                                                    isDeleting={deletingImageId === img.id}
+                                                />
+                                            ))}
+                                        </ScrollView>
+                                    ) : (
+                                        <Text style={styles.noImagesText}>No extra images yet</Text>
+                                    )}
+                                </View>
+
                                 <View style={styles.modalActions}>
+                                    <TouchableOpacity
+                                        style={[styles.modalActionButton, styles.editModalButton]}
+                                        onPress={() => {
+                                            setDetailsModalVisible(false);
+                                            navigation.navigate("AddPlaceScreen", { place: selectedPlace });
+                                        }}
+                                    >
+                                        <Ionicons name="create-outline" size={18} color="#fff" />
+                                        <Text style={styles.modalActionText}>Edit</Text>
+                                    </TouchableOpacity>
                                     <TouchableOpacity
                                         style={[styles.modalActionButton, styles.deleteModalButton]}
                                         onPress={() => deletePlace(selectedPlace.id, selectedPlace.placeName)}
                                         disabled={actionLoading}
                                     >
-                                        {actionLoading ? (
-                                            <ActivityIndicator size="small" color="#fff" />
-                                        ) : (
-                                            <>
-                                                <Ionicons name="trash-outline" size={18} color="#fff" />
-                                                <Text style={styles.modalActionText}>Delete</Text>
-                                            </>
-                                        )}
+                                        {actionLoading ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="trash-outline" size={18} color="#fff" />}
+                                        <Text style={styles.modalActionText}>Delete</Text>
                                     </TouchableOpacity>
                                 </View>
                             </ScrollView>
@@ -495,15 +573,13 @@ export default function PlaceList({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-    // ... keep all existing styles from the previous version
-    // (We'll reuse the same styles, no changes needed)
     container: { flex: 1, backgroundColor: "#f5f7fa" },
-    header: { paddingHorizontal: 20, paddingTop: 50, paddingBottom: 15, borderBottomLeftRadius: 30, borderBottomRightRadius: 30, elevation: 5, shadowColor: '#2c5a73', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, marginTop: -35 },
+    header: { paddingHorizontal: 20, paddingTop: 50, paddingBottom: 15, borderBottomLeftRadius: 30, borderBottomRightRadius: 30, elevation: 5, marginTop: -35 },
     headerTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 },
     menuButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
     headerCenter: { alignItems: "center" },
     greeting: { fontSize: 18, fontWeight: "bold", color: "#fff", marginBottom: 2 },
-    subtitle: { fontSize: 12, color: "rgba(255, 255, 255, 0.9)", fontWeight: "500" },
+    subtitle: { fontSize: 12, color: "rgba(255,255,255,0.9)", fontWeight: "500" },
     headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
     addButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
     downloadButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
@@ -564,8 +640,16 @@ const styles = StyleSheet.create({
     modalStatValue: { fontSize: 18, fontWeight: 'bold', color: '#1e293b', marginTop: 4 },
     modalStatLabel: { fontSize: 11, color: '#64748b', marginTop: 2 },
     modalStatDivider: { width: 1, height: 30, backgroundColor: '#e2e8f0' },
+    galleryHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+    addGalleryButton: { padding: 4 },
+    galleryScroll: { flexDirection: 'row', marginTop: 8 },
+    galleryImageContainer: { width: 100, height: 100, marginRight: 10, borderRadius: 8, overflow: 'hidden', position: 'relative' },
+    galleryImage: { width: '100%', height: '100%', resizeMode: 'cover' },
+    deleteGalleryImage: { position: 'absolute', top: 5, right: 5, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 12 },
+    noImagesText: { fontSize: 12, color: '#94a3b8', fontStyle: 'italic', marginTop: 8 },
     modalActions: { flexDirection: 'row', justifyContent: 'center', gap: 10, marginTop: 10, marginBottom: 20 },
     modalActionButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 12, gap: 6 },
+    editModalButton: { backgroundColor: '#3B82F6' },
     deleteModalButton: { backgroundColor: '#DC2626' },
     modalActionText: { color: '#fff', fontSize: 14, fontWeight: '600' },
 });

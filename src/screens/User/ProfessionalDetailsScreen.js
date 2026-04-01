@@ -59,7 +59,10 @@ export default function ProfessionalDetailsScreen({ navigation, route }) {
 
   const [professional, setProfessional] = useState(null);
   const [services, setServices] = useState([]);
+  const [gallery, setGallery] = useState([]); // New: gallery images
   const [loading, setLoading] = useState(true);
+  const [fullImageVisible, setFullImageVisible] = useState(false);
+  const [fullImageUrl, setFullImageUrl] = useState("");
 
   // Booking modal state
   const [bookingModal, setBookingModal] = useState(false);
@@ -80,6 +83,7 @@ export default function ProfessionalDetailsScreen({ navigation, route }) {
   useEffect(() => {
     fetchProfessionalDetails();
     fetchServices();
+    fetchGallery(); // New: fetch gallery
     if (user) fetchUserBalance();
   }, []);
 
@@ -89,11 +93,9 @@ export default function ProfessionalDetailsScreen({ navigation, route }) {
         ? API.GET_GUIDERS_DETAILS
         : API.GET_PHOTOGRAPHERS_DETAILS;
       const paramName = professionalType === 'guider' ? 'guiderId' : 'photographerId';
-      // ✅ Send as query parameters
       const response = await api.post(endpoint, null, {
         params: { [paramName]: professionalId }
       });
-      console.log("Professional details response:", response.data);
       if (response.data?.status) {
         setProfessional(response.data.data);
       } else {
@@ -110,7 +112,6 @@ export default function ProfessionalDetailsScreen({ navigation, route }) {
       const response = await api.post(API.GET_SERVICES, null, {
         params: { [professionalType === 'guider' ? 'guiderId' : 'photographerId']: professionalId }
       });
-      console.log("Services response:", response.data);
       if (response.data?.status && Array.isArray(response.data.data)) {
         const servicesData = response.data.data.map(s => ({
           id: s.id,
@@ -126,6 +127,26 @@ export default function ProfessionalDetailsScreen({ navigation, route }) {
     } catch (error) {
       console.error("Error fetching services:", error);
       setServices([]);
+    }
+  };
+
+  // New: fetch gallery images for this professional
+  const fetchGallery = async () => {
+    try {
+      const params = new URLSearchParams();
+      params.append(professionalType === 'guider' ? "guiderId" : "photographerId", professionalId.toString());
+      params.append("page", "1");
+      const response = await api.post(API.ALL_IMAGES_BY_ID, params.toString(), {
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      });
+      if (response.data?.status) {
+        setGallery(response.data.data || []);
+      } else {
+        setGallery([]);
+      }
+    } catch (error) {
+      console.error("Error fetching gallery:", error);
+      setGallery([]);
     } finally {
       setLoading(false);
     }
@@ -156,54 +177,55 @@ export default function ProfessionalDetailsScreen({ navigation, route }) {
 
   // ---------- Booking functions ----------
   const performBooking = async () => {
-    try {
-      setBookingLoading(true);
-      const year = date.getFullYear();
-      const month = (date.getMonth() + 1).toString().padStart(2, "0");
-      const day = date.getDate().toString().padStart(2, "0");
-      const formattedDateTime = `${year}-${month}-${day} ${timeSlot}`;
-      const price = parseFloat(selectedService.price) || 0;
+  try {
+    setBookingLoading(true);
 
-      const bookingPayload = {
-        userId: user.id,
-        [professionalType === 'guider' ? 'guiderId' : 'photographerId']: professionalId,
-        serviceId: selectedService.id,
-        dateTime: formattedDateTime,
-        appointmentCharge: 0,
-        serviceCost: price,
-        totalPayment: price,
-        transactionId: `txn_${Date.now()}`,
-        note: notes || "",
-      };
+    // ✅ पक्का करें कि userId सही मिल रही है
+    const currentUserId = user?.userId || user?.id; 
 
-      const response = await api.post(API.CREATE_APPOINTMENT, bookingPayload);
-      if (response.data?.status) {
-        Alert.alert(
-          "Success",
-          "Booking request sent successfully!",
-          [
-            {
-              text: "OK",
-              onPress: () => {
-                setBookingModal(false);
-                setSelectedService(null);
-                setTimeSlot("");
-                setNotes("");
-                navigation.navigate("MyBookings");
-              },
-            },
-          ]
-        );
-      } else {
-        Alert.alert("Error", response.data?.message || "Booking failed");
-      }
-    } catch (error) {
-      console.log("Booking error:", error.response?.data || error.message);
-      Alert.alert("Error", error.response?.data?.message || "Failed to create booking");
-    } finally {
-      setBookingLoading(false);
+    if (!currentUserId) {
+      Alert.alert("Error", "User session not found. Please login again.");
+      return;
     }
-  };
+
+    const year = date.getFullYear();
+    const month = (date.getMonth() + 1).toString().padStart(2, "0");
+    const day = date.getDate().toString().padStart(2, "0");
+    const formattedDateTime = `${year}-${month}-${day} ${timeSlot}`;
+    const price = parseFloat(selectedService.price) || 0;
+
+    const bookingPayload = {
+      // ✅ यहाँ सुधार किया गया है
+      userId: currentUserId, 
+      [professionalType === 'guider' ? 'guiderId' : 'photographerId']: professionalId,
+      serviceId: selectedService.id,
+      dateTime: formattedDateTime,
+      appointmentCharge: 0,
+      serviceCost: price,
+      totalPayment: price,
+      transactionId: `txn_${Date.now()}`,
+      note: notes || "",
+    };
+
+    console.log("Booking Payload:", bookingPayload); // Debug के लिए
+
+    const response = await api.post(API.CREATE_APPOINTMENT, bookingPayload);
+    
+    if (response.data?.status) {
+      Alert.alert("Success", "Booking request sent successfully!");
+      setBookingModal(false);
+      navigation.navigate("MyBookings");
+    } else {
+      // अगर अब भी User not found आता है, तो इसका मतलब API 'userId' की जगह 'id' मांग रही है
+      Alert.alert("Error", response.data?.message || "Booking failed");
+    }
+  } catch (error) {
+    console.log("Booking error:", error.response?.data || error.message);
+    Alert.alert("Error", "Something went wrong while booking");
+  } finally {
+    setBookingLoading(false);
+  }
+};
 
   const handlePayWithWallet = async () => {
     const total = parseFloat(selectedService.price) || 0;
@@ -296,6 +318,11 @@ export default function ProfessionalDetailsScreen({ navigation, route }) {
     setSelectedService(service);
     setBookingModal(true);
     fetchUserBalance();
+  };
+
+  const openFullImage = (url) => {
+    setFullImageUrl(url);
+    setFullImageVisible(true);
   };
 
   const renderServiceItem = (service) => (
@@ -554,6 +581,29 @@ export default function ProfessionalDetailsScreen({ navigation, route }) {
     </Modal>
   );
 
+  const renderFullImageModal = () => (
+    <Modal
+      visible={fullImageVisible}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => setFullImageVisible(false)}
+    >
+      <View style={styles.fullImageContainer}>
+        <TouchableOpacity
+          style={styles.fullImageCloseBtn}
+          onPress={() => setFullImageVisible(false)}
+        >
+          <Ionicons name="close" size={30} color="#fff" />
+        </TouchableOpacity>
+        <Image
+          source={{ uri: fullImageUrl }}
+          style={styles.fullImage}
+          resizeMode="contain"
+        />
+      </View>
+    </Modal>
+  );
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -626,6 +676,30 @@ export default function ProfessionalDetailsScreen({ navigation, route }) {
           )}
         </View>
 
+        {/* New: Gallery Section */}
+        {gallery.length > 0 && (
+          <View style={styles.gallerySection}>
+            <Text style={styles.galleryTitle}>Photo Gallery</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.galleryScroll}
+            >
+              {gallery.map((img, idx) => (
+                <TouchableOpacity
+                  key={img.id || idx}
+                  onPress={() => openFullImage(getImageUrl(img.image))}
+                >
+                  <Image
+                    source={{ uri: getImageUrl(img.image) }}
+                    style={styles.galleryImage}
+                  />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
         {/* Services */}
         <View style={styles.servicesContainer}>
           <Text style={styles.servicesTitle}>Available Packages</Text>
@@ -639,6 +713,7 @@ export default function ProfessionalDetailsScreen({ navigation, route }) {
 
       {renderBookingModal()}
       {renderLoginPromptModal()}
+      {renderFullImageModal()}
     </View>
   );
 }
@@ -674,6 +749,12 @@ const styles = StyleSheet.create({
   professionalRatingText: { fontSize: 13, color: "#64748b", marginLeft: 4 },
   professionalExperience: { fontSize: 13, color: "#475569", marginTop: 2 },
   professionalDescription: { fontSize: 14, color: "#475569", lineHeight: 20 },
+
+  // Gallery styles
+  gallerySection: { marginHorizontal: 16, marginBottom: 16 },
+  galleryTitle: { fontSize: 16, fontWeight: "600", color: "#1e293b", marginBottom: 8 },
+  galleryScroll: { paddingVertical: 4 },
+  galleryImage: { width: 100, height: 100, borderRadius: 8, marginRight: 8, backgroundColor: "#e2e8f0" },
 
   servicesContainer: { marginHorizontal: 16, marginBottom: 20 },
   servicesTitle: { fontSize: 18, fontWeight: "700", color: "#1e293b", marginBottom: 12 },
@@ -751,4 +832,25 @@ const styles = StyleSheet.create({
   promptLoginBtn: { flex: 1, borderRadius: 8, overflow: "hidden" },
   promptLoginGradient: { paddingVertical: 12, alignItems: "center" },
   promptLoginText: { fontSize: 14, fontWeight: "600", color: "#fff" },
+
+  // Full image modal styles
+  fullImageContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullImageCloseBtn: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    zIndex: 10,
+    padding: 10,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 30,
+  },
+  fullImage: {
+    width: '100%',
+    height: '80%',
+  },
 });

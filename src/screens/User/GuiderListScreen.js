@@ -12,6 +12,7 @@ import {
   Alert,
   Modal,
   ScrollView,
+  TouchableWithoutFeedback,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -24,19 +25,18 @@ import { LocationContext } from "../../context/LocationContext";
 import api from "../../api/apiClient";
 import { API } from "../../api/endpoints";
 
-// ✅ Import like hook and component
+// Import like hook and component
 import { useLikes } from '../../context/LikesContext';
 import LikeButton from "../../components/LikeButton";
 
 const BASE_URL = "https://localguider.sinfode.com";
-const API_BASE = "https://localguider.sinfode.com/api"; // used for fetch calls
+const API_BASE = "https://localguider.sinfode.com/api";
 
 export default function GuiderListScreen({ navigation, route }) {
   const { user } = useContext(AuthContext);
   const { location } = useContext(LocationContext);
   const { type } = route.params || { type: "all" };
 
-  // ✅ Like hook at top level
   const { isLiked, toggleLike } = useLikes();
 
   // Existing state
@@ -48,6 +48,7 @@ export default function GuiderListScreen({ navigation, route }) {
   const [selectedGuider, setSelectedGuider] = useState(null);
   const [expandedGuider, setExpandedGuider] = useState(null);
   const [guiderServices, setGuiderServices] = useState({});
+  const [guiderGallery, setGuiderGallery] = useState({});
   const [bookingModal, setBookingModal] = useState(false);
   const [selectedService, setSelectedService] = useState(null);
   const [bookingLoading, setBookingLoading] = useState(false);
@@ -63,8 +64,12 @@ export default function GuiderListScreen({ navigation, route }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
 
-  // Wallet-related state
+  // Wallet state
   const [userBalance, setUserBalance] = useState(0);
+
+  // Full image modal state
+  const [fullImageVisible, setFullImageVisible] = useState(false);
+  const [fullImageUrl, setFullImageUrl] = useState("");
 
   // Fetch guiders on mount and when filters change
   useEffect(() => {
@@ -130,12 +135,9 @@ export default function GuiderListScreen({ navigation, route }) {
     if (guiderServices[guiderId]) return;
 
     try {
-      console.log(`📡 Fetching services for guider ID: ${guiderId}`);
       const response = await api.post(API.GET_SERVICES, null, {
         params: { guiderId: guiderId }
       });
-
-      console.log("📦 Services response:", response.data);
 
       if (response.data?.status && Array.isArray(response.data.data)) {
         const services = response.data.data.map(s => ({
@@ -149,7 +151,6 @@ export default function GuiderListScreen({ navigation, route }) {
         setGuiderServices(prev => ({ ...prev, [guiderId]: services }));
       } else {
         setGuiderServices(prev => ({ ...prev, [guiderId]: [] }));
-        Alert.alert("Info", "This guide has no active packages.");
       }
     } catch (error) {
       console.error("Error fetching guider services:", error);
@@ -162,13 +163,30 @@ export default function GuiderListScreen({ navigation, route }) {
             { text: "Login", onPress: () => navigation.navigate("Login") }
           ]
         );
-      } else {
-        Alert.alert(
-          "Network Error",
-          "Could not load services. Please check your internet connection."
-        );
       }
       setGuiderServices(prev => ({ ...prev, [guiderId]: [] }));
+    }
+  };
+
+  // Fetch gallery images for a specific guider
+  const fetchGuiderGallery = async (guiderId) => {
+    if (guiderGallery[guiderId]) return;
+    try {
+      const params = new URLSearchParams();
+      params.append("guiderId", guiderId.toString());
+      params.append("page", "1");
+      const response = await api.post(API.ALL_IMAGES_BY_ID, params.toString(), {
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      });
+      if (response.data?.status) {
+        const images = response.data.data || [];
+        setGuiderGallery(prev => ({ ...prev, [guiderId]: images }));
+      } else {
+        setGuiderGallery(prev => ({ ...prev, [guiderId]: [] }));
+      }
+    } catch (error) {
+      console.error("Error fetching guider gallery:", error);
+      setGuiderGallery(prev => ({ ...prev, [guiderId]: [] }));
     }
   };
 
@@ -183,6 +201,7 @@ export default function GuiderListScreen({ navigation, route }) {
     setRefreshing(true);
     setPage(1);
     setGuiderServices({});
+    setGuiderGallery({});
     fetchGuiders(1, false);
   };
 
@@ -194,6 +213,7 @@ export default function GuiderListScreen({ navigation, route }) {
       setExpandedGuider(guider.id);
       setSelectedGuider(guider);
       fetchGuiderServices(guider.id);
+      fetchGuiderGallery(guider.id);
     }
   };
 
@@ -203,6 +223,12 @@ export default function GuiderListScreen({ navigation, route }) {
     if (path.startsWith("http")) return path;
     const cleanPath = path.replace(/^\/+/, '');
     return `${BASE_URL}/api/image/download/${cleanPath}`;
+  };
+
+  // Open full-screen image viewer
+  const openFullImage = (url) => {
+    setFullImageUrl(url);
+    setFullImageVisible(true);
   };
 
   // Render star rating
@@ -254,9 +280,9 @@ export default function GuiderListScreen({ navigation, route }) {
       <View style={styles.serviceHeader}>
         <View style={styles.serviceTitleContainer}>
           <Text style={styles.serviceTitle}>{service.title}</Text>
-          <View style={styles.serviceBadge}>
-            <Text style={styles.serviceDuration}>{service.duration || "2 hours"}</Text>
-          </View>
+          {/* <View style={styles.serviceBadge}> */}
+            {/* <Text style={styles.serviceDuration}>{service.duration || "2 hours"}</Text> */}
+          {/* </View> */}
         </View>
         <Text style={styles.servicePrice}>₹{service.price}</Text>
       </View>
@@ -282,14 +308,14 @@ export default function GuiderListScreen({ navigation, route }) {
     </View>
   );
 
-  // ✅ Render each guider card with LikeButton
+  // Render each guider card with LikeButton and gallery
   const renderGuiderCard = ({ item }) => {
     const isExpanded = expandedGuider === item.id;
     const services = guiderServices[item.id] || [];
+    const galleryImages = guiderGallery[item.id] || [];
 
     return (
       <View style={styles.guiderCard}>
-        {/* Like Button – positioned absolutely */}
         <LikeButton
           isLiked={isLiked(item.id, 'guider')}
           onPress={() => toggleLike(item, 'guider')}
@@ -320,12 +346,12 @@ export default function GuiderListScreen({ navigation, route }) {
               </View>
               <View style={styles.statsContainer}>
                 <View style={styles.statItem}>
-                  <Ionicons name="people-outline" size={14} color="#64748b" />
-                  <Text style={styles.statText}>{item.totalBookings || 0} tours</Text>
+                  {/* <Ionicons name="people-outline" size={14} color="#64748b" /> */}
+                  {/* <Text style={styles.statText}>{item.totalBookings || 0} tours</Text> */}
                 </View>
                 <View style={styles.statItem}>
-                  <Ionicons name="time-outline" size={14} color="#64748b" />
-                  <Text style={styles.statText}>Available</Text>
+                  {/* <Ionicons name="time-outline" size={14} color="#64748b" /> */}
+                  {/* <Text style={styles.statText}>Available</Text> */}
                 </View>
               </View>
             </View>
@@ -382,6 +408,31 @@ export default function GuiderListScreen({ navigation, route }) {
                 )}
               </View>
             </View>
+
+            {/* Gallery Section - shown ABOVE packages */}
+            {galleryImages.length > 0 && (
+              <View style={styles.gallerySection}>
+                <Text style={styles.sectionTitle}>Photo Gallery</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.galleryScroll}
+                >
+                  {galleryImages.map((img, idx) => (
+                    <TouchableOpacity
+                      key={img.id || idx}
+                      onPress={() => openFullImage(getImageUrl(img.image))}
+                    >
+                      <Image
+                        source={{ uri: getImageUrl(img.image) }}
+                        style={styles.galleryImage}
+                      />
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+
             <View style={styles.servicesSection}>
               <Text style={styles.sectionTitle}>Tour Packages</Text>
               {services.length > 0 ? (
@@ -394,6 +445,7 @@ export default function GuiderListScreen({ navigation, route }) {
                 </View>
               )}
             </View>
+
             {item.reviewCount > 0 && (
               <TouchableOpacity
                 style={styles.reviewsLink}
@@ -409,7 +461,6 @@ export default function GuiderListScreen({ navigation, route }) {
   };
 
   // ----- Wallet & Payment Functions -----
-
   const fetchUserBalance = async () => {
     if (!user) return;
     try {
@@ -597,7 +648,6 @@ export default function GuiderListScreen({ navigation, route }) {
   };
 
   // ----- Modal Rendering Functions -----
-
   const renderFilterModal = () => (
     <Modal visible={filterModal} transparent animationType="slide" onRequestClose={() => setFilterModal(false)}>
       <BlurView intensity={20} style={StyleSheet.absoluteFill} />
@@ -877,6 +927,30 @@ export default function GuiderListScreen({ navigation, route }) {
     </Modal>
   );
 
+  // Full-screen image viewer modal
+  const renderFullImageModal = () => (
+    <Modal
+      visible={fullImageVisible}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => setFullImageVisible(false)}
+    >
+      <View style={styles.fullImageContainer}>
+        <TouchableOpacity
+          style={styles.fullImageCloseBtn}
+          onPress={() => setFullImageVisible(false)}
+        >
+          <Ionicons name="close" size={30} color="#fff" />
+        </TouchableOpacity>
+        <Image
+          source={{ uri: fullImageUrl }}
+          style={styles.fullImage}
+          resizeMode="contain"
+        />
+      </View>
+    </Modal>
+  );
+
   // ----- Main Render -----
   return (
     <View style={styles.container}>
@@ -946,6 +1020,7 @@ export default function GuiderListScreen({ navigation, route }) {
       {renderFilterModal()}
       {renderBookingModal()}
       {renderLoginPromptModal()}
+      {renderFullImageModal()}
     </View>
   );
 }
@@ -989,6 +1064,9 @@ const styles = StyleSheet.create({
   expertiseTags: { flexDirection: "row", flexWrap: "wrap" },
   expertiseTag: { backgroundColor: "#dbeafe", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginRight: 8, marginBottom: 4 },
   expertiseText: { fontSize: 11, color: "#1e40af", fontWeight: "500" },
+  gallerySection: { marginBottom: 12 },
+  galleryScroll: { paddingVertical: 4 },
+  galleryImage: { width: 80, height: 80, borderRadius: 8, marginRight: 8, backgroundColor: "#e2e8f0" },
   servicesSection: { marginBottom: 12 },
   servicesList: { marginTop: 8 },
   serviceItem: { backgroundColor: "#f8fafc", borderRadius: 12, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: "#e2e8f0" },
@@ -1074,7 +1152,6 @@ const styles = StyleSheet.create({
   modalActions: { flexDirection: "row", justifyContent: "space-between", marginTop: 10, marginBottom: 20 },
   cancelBtn: { flex: 1, paddingVertical: 14, borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 12, alignItems: "center" },
   cancelBtnText: { fontSize: 15, fontWeight: "600", color: "#64748b" },
-  buttonDisabled: { opacity: 0.7 },
   input: { backgroundColor: "#f8fafc", borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 12, padding: 14, fontSize: 14, color: "#1e293b" },
   promptContent: { backgroundColor: "#fff", borderRadius: 20, padding: 24, alignItems: "center", marginHorizontal: 20 },
   promptTitle: { fontSize: 20, fontWeight: "bold", color: "#1e293b", marginTop: 16, marginBottom: 8 },
@@ -1085,8 +1162,6 @@ const styles = StyleSheet.create({
   promptLoginBtn: { flex: 1, borderRadius: 8, overflow: "hidden" },
   promptLoginGradient: { paddingVertical: 12, alignItems: "center" },
   promptLoginText: { fontSize: 14, fontWeight: "600", color: "#fff" },
-
-  // ✅ New style for the like button
   cardLikeButton: {
     position: 'absolute',
     top: 8,
@@ -1100,5 +1175,25 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
+  },
+  // Full image modal styles
+  fullImageContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullImageCloseBtn: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    zIndex: 10,
+    padding: 10,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 30,
+  },
+  fullImage: {
+    width: '100%',
+    height: '80%',
   },
 });

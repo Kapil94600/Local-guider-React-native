@@ -244,16 +244,16 @@ export default function PlaceListScreen({ navigation, route }) {
           </Text>
 
           <View style={styles.cardFooter}>
-            <View style={styles.statsContainer}>
-              <View style={styles.statItem}>
-                <Ionicons name="eye-outline" size={14} color="#64748b" />
-                <Text style={styles.statText}>{item.views || 0} views</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Ionicons name="people-outline" size={14} color="#64748b" />
-                <Text style={styles.statText}>{item.guiders || 0} guides</Text>
-              </View>
-            </View>
+            {/* <View style={styles.statsContainer}> */}
+              {/* <View style={styles.statItem}> */}
+                {/* <Ionicons name="eye-outline" size={14} color="#64748b" /> */}
+                {/* <Text style={styles.statText}>{item.views || 0} views</Text> */}
+              {/* </View> */}
+              {/* <View style={styles.statItem}> */}
+                {/* <Ionicons name="people-outline" size={14} color="#64748b" /> */}
+                {/* <Text style={styles.statText}>{item.guiders || 0} guides</Text> */}
+              {/* </View> */}
+            {/* </View> */}
             
             <LinearGradient
               colors={['#2c5a73', '#1e3c4f']}

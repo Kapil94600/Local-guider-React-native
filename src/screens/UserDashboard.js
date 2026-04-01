@@ -25,11 +25,40 @@ import { AuthContext } from "../context/AuthContext";
 import { LocationContext } from "../context/LocationContext";
 import api from "../api/apiClient";
 import { API } from "../api/endpoints";
-import { useLikes } from '../context/LikesContext'; // ✅ Shared context
+import { useLikes } from '../context/LikesContext';
 import LikeButton from "../components/LikeButton";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const BASE_URL = "https://localguider.sinfode.com";
+const MAX_DISTANCE_KM = 100; // Maximum distance in kilometers to show results
+const AUTO_REFRESH_INTERVAL = 300000; // 5 minutes in milliseconds
+
+// Helper function to calculate distance between two coordinates (Haversine formula)
+const calculateDistance = (lat1, lon1, lat2, lon2) => {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return Infinity;
+  
+  const R = 6371; // Earth's radius in kilometers
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+};
+
+// Helper function to filter items by location
+const filterByLocation = (items, userLat, userLng, getLatLng) => {
+  if (!userLat || !userLng) return items;
+  
+  return items.filter(item => {
+    const { lat, lng } = getLatLng(item);
+    if (!lat || !lng) return false;
+    const distance = calculateDistance(userLat, userLng, lat, lng);
+    return distance <= MAX_DISTANCE_KM;
+  });
+};
 
 // Local images from assets folder
 const FEATURED_IMAGES = [
@@ -145,7 +174,7 @@ const PlaceImage = ({ imagePath, style }) => {
   );
 };
 
-// Rating Stars Component - Centered
+// Rating Stars Component
 const RatingStars = ({ rating, size = 12 }) => {
   const stars = [];
   const fullStars = Math.floor(rating || 0);
@@ -170,7 +199,7 @@ const RatingStars = ({ rating, size = 12 }) => {
   );
 };
 
-// Card Component for Top Guiders & Photographers (receives like props)
+// Card Component for Top Guiders & Photographers
 const TopGuiderPhotographerCard = ({ item, type, onPress, isLiked, onToggleLike }) => {
   const getProfileImage = () => {
     return item.featuredImage || item.profileImage || item.avatar;
@@ -257,12 +286,12 @@ export default function UserDashboard({ navigation }) {
   const { user, refreshUser } = useContext(AuthContext);
   const { location, loading: locationLoading, refreshLocation } = useContext(LocationContext);
 
-  // ✅ Shared likes from context
   const { isLiked, toggleLike } = useLikes();
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [lastRefreshTime, setLastRefreshTime] = useState(null);
   const [loading, setLoading] = useState({
     places: false,
     guiders: false,
@@ -272,13 +301,23 @@ export default function UserDashboard({ navigation }) {
     topPhotographers: false,
   });
 
-  // Auto-scroll references
   const flatListRef = useRef(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const autoScrollTimer = useRef(null);
+  const autoRefreshTimer = useRef(null);
   const scrollX = useRef(new Animated.Value(0)).current;
 
   const [data, setData] = useState({
+    places: [],
+    guiders: [],
+    photographers: [],
+    topPlaces: [],
+    topGuiders: [],
+    topPhotographers: [],
+  });
+
+  // Filtered data based on location
+  const [filteredData, setFilteredData] = useState({
     places: [],
     guiders: [],
     photographers: [],
@@ -292,19 +331,105 @@ export default function UserDashboard({ navigation }) {
     if (refreshLocation) {
       refreshLocation();
     }
+    
+    // Start auto-refresh when component mounts
+    startAutoRefresh();
+    
+    // Cleanup timers on unmount
+    return () => {
+      if (autoScrollTimer.current) {
+        clearInterval(autoScrollTimer.current);
+      }
+      if (autoRefreshTimer.current) {
+        clearInterval(autoRefreshTimer.current);
+      }
+    };
   }, []);
 
-  useEffect(() => {
-    if (location?.latitude && location?.longitude) {
-      fetchAllData();
-    } else {
-      if (refreshLocation) {
-        refreshLocation();
-      }
+  // Start auto-refresh timer
+  const startAutoRefresh = () => {
+    // Clear existing timer if any
+    if (autoRefreshTimer.current) {
+      clearInterval(autoRefreshTimer.current);
     }
-  }, [location]);
+    
+    // Set up new timer for auto-refresh
+    autoRefreshTimer.current = setInterval(() => {
+      console.log("Auto-refreshing data...", new Date().toLocaleTimeString());
+      performAutoRefresh();
+    }, AUTO_REFRESH_INTERVAL);
+  };
 
-  // Auto-scroll effect for image carousel
+  // Perform auto-refresh without showing refresh indicator
+  const performAutoRefresh = async () => {
+    try {
+      console.log("Starting auto-refresh...");
+      await fetchAllData();
+      setLastRefreshTime(new Date());
+      console.log("Auto-refresh completed successfully");
+    } catch (error) {
+      console.error("Auto-refresh failed:", error);
+    }
+  };
+
+  // Filter data whenever location or raw data changes
+  useEffect(() => {
+    if (!location?.latitude || !location?.longitude) {
+      // If no location, show all data (or none, depending on preference)
+      setFilteredData(data);
+      return;
+    }
+
+    const userLat = location.latitude;
+    const userLng = location.longitude;
+
+    // Filter places by location
+    const filteredPlaces = filterByLocation(data.places, userLat, userLng, (place) => ({
+      lat: place.latitude,
+      lng: place.longitude
+    }));
+
+    // Filter guiders by location
+    const filteredGuiders = filterByLocation(data.guiders, userLat, userLng, (guider) => ({
+      lat: guider.latitude,
+      lng: guider.longitude
+    }));
+
+    // Filter photographers by location
+    const filteredPhotographers = filterByLocation(data.photographers, userLat, userLng, (photographer) => ({
+      lat: photographer.latitude,
+      lng: photographer.longitude
+    }));
+
+    // Filter top places
+    const filteredTopPlaces = filterByLocation(data.topPlaces, userLat, userLng, (place) => ({
+      lat: place.latitude,
+      lng: place.longitude
+    }));
+
+    // Filter top guiders
+    const filteredTopGuiders = filterByLocation(data.topGuiders, userLat, userLng, (guider) => ({
+      lat: guider.latitude,
+      lng: guider.longitude
+    }));
+
+    // Filter top photographers
+    const filteredTopPhotographers = filterByLocation(data.topPhotographers, userLat, userLng, (photographer) => ({
+      lat: photographer.latitude,
+      lng: photographer.longitude
+    }));
+
+    setFilteredData({
+      places: filteredPlaces,
+      guiders: filteredGuiders,
+      photographers: filteredPhotographers,
+      topPlaces: filteredTopPlaces,
+      topGuiders: filteredTopGuiders,
+      topPhotographers: filteredTopPhotographers,
+    });
+  }, [data, location]);
+
+  // Auto-scroll effect
   useEffect(() => {
     startAutoScroll();
     return () => {
@@ -360,11 +485,10 @@ export default function UserDashboard({ navigation }) {
   const fetchPlaces = async (page = 1) => {
     try {
       setLoading(prev => ({ ...prev, places: true }));
+      
       const response = await api.post(API.GET_PLACES, {
-        latitude: location?.latitude,
-        longitude: location?.longitude,
         page,
-        perPage: 10,
+        perPage: 50, // Fetch more to filter on frontend
         searchText: searchQuery,
       });
 
@@ -384,11 +508,10 @@ export default function UserDashboard({ navigation }) {
   const fetchGuiders = async (page = 1) => {
     try {
       setLoading(prev => ({ ...prev, guiders: true }));
+      
       const response = await api.post(API.GET_GUIDERS_ALL, {
-        latitude: location?.latitude,
-        longitude: location?.longitude,
         page,
-        perPage: 10,
+        perPage: 50,
         searchText: searchQuery,
         sortBy: "rating",
         status: "APPROVED",
@@ -410,11 +533,10 @@ export default function UserDashboard({ navigation }) {
   const fetchPhotographers = async (page = 1) => {
     try {
       setLoading(prev => ({ ...prev, photographers: true }));
+      
       const response = await api.post(API.GET_PHOTOGRAPHERS_ALL, {
-        latitude: location?.latitude,
-        longitude: location?.longitude,
         page,
-        perPage: 10,
+        perPage: 50,
         searchText: searchQuery,
         sortBy: "rating",
         status: "APPROVED",
@@ -436,11 +558,10 @@ export default function UserDashboard({ navigation }) {
   const fetchTopPlaces = async () => {
     try {
       setLoading(prev => ({ ...prev, topPlaces: true }));
+      
       const response = await api.post(API.GET_PLACES, {
-        latitude: location?.latitude,
-        longitude: location?.longitude,
         page: 1,
-        perPage: 10,
+        perPage: 50,
         sortBy: "rating",
         minRating: 4.0,
       });
@@ -458,11 +579,10 @@ export default function UserDashboard({ navigation }) {
   const fetchTopGuiders = async () => {
     try {
       setLoading(prev => ({ ...prev, topGuiders: true }));
+      
       const response = await api.post(API.GET_GUIDERS_ALL, {
-        latitude: location?.latitude,
-        longitude: location?.longitude,
         page: 1,
-        perPage: 10,
+        perPage: 50,
         sortBy: "rating",
         minRating: 4.0,
         status: "APPROVED",
@@ -481,11 +601,10 @@ export default function UserDashboard({ navigation }) {
   const fetchTopPhotographers = async () => {
     try {
       setLoading(prev => ({ ...prev, topPhotographers: true }));
+      
       const response = await api.post(API.GET_PHOTOGRAPHERS_ALL, {
-        latitude: location?.latitude,
-        longitude: location?.longitude,
         page: 1,
-        perPage: 10,
+        perPage: 50,
         sortBy: "rating",
         minRating: 4.0,
         status: "APPROVED",
@@ -513,6 +632,7 @@ export default function UserDashboard({ navigation }) {
       await refreshLocation();
     }
     await fetchAllData();
+    setLastRefreshTime(new Date());
     setRefreshing(false);
   };
 
@@ -532,37 +652,30 @@ export default function UserDashboard({ navigation }) {
 
   const getLocationText = () => {
     if (locationLoading) return "Detecting location...";
-    if (location?.city) {
-      return `${location.city}${location.state }`;
+    if (location?.city && location?.state) {
+      return `${location.city}, ${location.state}`;
     }
+    if (location?.city) return location.city;
+    if (location?.state) return location.state;
     if (location?.error) return "Location unavailable";
     return "Select location";
   };
 
-  const renderRating = (rating, size = 14) => {
-    const stars = [];
-    const fullStars = Math.floor(rating || 0);
-    const hasHalf = (rating || 0) % 1 >= 0.5;
-
-    for (let i = 0; i < 5; i++) {
-      if (i < fullStars) {
-        stars.push(<Ionicons key={i} name="star" size={size} color="#FFD700" />);
-      } else if (i === fullStars && hasHalf) {
-        stars.push(<Ionicons key={i} name="star-half" size={size} color="#FFD700" />);
-      } else {
-        stars.push(<Ionicons key={i} name="star-outline" size={size} color="#FFD700" />);
-      }
-    }
-    return <View style={{ flexDirection: 'row' }}>{stars}</View>;
-  };
-
-  // Handle Professional Press - navigates to ProfessionalDetails
   const handleProfessionalPress = (item, type) => {
     navigation.navigate("ProfessionalDetails", {
       professionalId: item.id,
       professionalType: type,
     });
   };
+
+  if (locationLoading && !location?.latitude) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#2c5a73" />
+        <Text style={styles.loadingText}>Detecting your location...</Text>
+      </View>
+    );
+  }
 
   // Featured Carousel
   const renderFeaturedCarousel = () => (
@@ -637,12 +750,11 @@ export default function UserDashboard({ navigation }) {
     </View>
   );
 
-  // Top Places Card - now navigates to PlaceDetails directly
+  // Top Places Card
   const renderTopPlaceCard = (place) => {
     const getPlaceLocation = () => {
       if (place.city) return place.city;
       if (place.state) return place.state;
-      // if (place.location) return place.location;
       return 'Unknown';
     };
 
@@ -681,7 +793,7 @@ export default function UserDashboard({ navigation }) {
     );
   };
 
-  // Top Guider Card - passes like props
+  // Top Guider Card
   const renderTopGuiderCard = (guider) => (
     <TopGuiderPhotographerCard
       key={guider.id}
@@ -693,7 +805,7 @@ export default function UserDashboard({ navigation }) {
     />
   );
 
-  // Top Photographer Card - passes like props
+  // Top Photographer Card
   const renderTopPhotographerCard = (photographer) => (
     <TopGuiderPhotographerCard
       key={photographer.id}
@@ -825,8 +937,7 @@ export default function UserDashboard({ navigation }) {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleContainer}>
-              <Ionicons name="star" size={22} color="#FFD700" />
-              <Text style={styles.sectionTitle}>Top Rated Places</Text>
+              <Text style={styles.sectionTitle}>Top Places</Text>
             </View>
             <TouchableOpacity onPress={() => navigation.navigate("PlaceListScreen")}>
               <Text style={styles.seeAllText}>See All →</Text>
@@ -834,8 +945,8 @@ export default function UserDashboard({ navigation }) {
           </View>
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {data.topPlaces.length > 0 ? (
-              data.topPlaces.map(place => (
+            {filteredData.topPlaces.length > 0 ? (
+              filteredData.topPlaces.map(place => (
                 <React.Fragment key={place.id}>
                   {renderTopPlaceCard(place)}
                 </React.Fragment>
@@ -843,35 +954,7 @@ export default function UserDashboard({ navigation }) {
             ) : (
               <View style={styles.emptyCard}>
                 <Ionicons name="location-outline" size={30} color="#94a3b8" />
-                <Text style={styles.emptyText}>No top places found</Text>
-              </View>
-            )}
-          </ScrollView>
-        </View>
-
-        {/* TOP GUIDERS SECTION */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionTitleContainer}>
-              <Ionicons name="people" size={22} color="#3B82F6" />
-              <Text style={styles.sectionTitle}>Top Tour Guides</Text>
-            </View>
-            <TouchableOpacity onPress={() => navigation.navigate("GuiderListScreen")}>
-              <Text style={styles.seeAllText}>See All →</Text>
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {data.topGuiders.length > 0 ? (
-              data.topGuiders.map(guider => (
-                <React.Fragment key={guider.id}>
-                  {renderTopGuiderCard(guider)}
-                </React.Fragment>
-              ))
-            ) : (
-              <View style={styles.emptyCard}>
-                <Ionicons name="people-outline" size={30} color="#94a3b8" />
-                <Text style={styles.emptyText}>No top guides found</Text>
+                <Text style={styles.emptyText}>No top places found nearby</Text>
               </View>
             )}
           </ScrollView>
@@ -881,17 +964,16 @@ export default function UserDashboard({ navigation }) {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleContainer}>
-              <Ionicons name="camera" size={22} color="#8B5CF6" />
               <Text style={styles.sectionTitle}>Top Photographers</Text>
             </View>
-            <TouchableOpacity onPress={() => navigation.navigate("TopPhotographers")}>
+            <TouchableOpacity onPress={() => navigation.navigate("PhotographersListScreen")}>
               <Text style={styles.seeAllText}>See All →</Text>
             </TouchableOpacity>
           </View>
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {data.topPhotographers.length > 0 ? (
-              data.topPhotographers.map(photographer => (
+            {filteredData.topPhotographers.length > 0 ? (
+              filteredData.topPhotographers.map(photographer => (
                 <React.Fragment key={photographer.id}>
                   {renderTopPhotographerCard(photographer)}
                 </React.Fragment>
@@ -899,7 +981,34 @@ export default function UserDashboard({ navigation }) {
             ) : (
               <View style={styles.emptyCard}>
                 <Ionicons name="camera-outline" size={30} color="#94a3b8" />
-                <Text style={styles.emptyText}>No top photographers found</Text>
+                <Text style={styles.emptyText}>No top photographers found nearby</Text>
+              </View>
+            )}
+          </ScrollView>
+        </View>
+
+        {/* TOP GUIDERS SECTION */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitleContainer}>
+              <Text style={styles.sectionTitle}>Top Guides</Text>
+            </View>
+            <TouchableOpacity onPress={() => navigation.navigate("GuiderListScreen")}>
+              <Text style={styles.seeAllText}>See All →</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {filteredData.topGuiders.length > 0 ? (
+              filteredData.topGuiders.map(guider => (
+                <React.Fragment key={guider.id}>
+                  {renderTopGuiderCard(guider)}
+                </React.Fragment>
+              ))
+            ) : (
+              <View style={styles.emptyCard}>
+                <Ionicons name="people-outline" size={30} color="#94a3b8" />
+                <Text style={styles.emptyText}>No top guides found nearby</Text>
               </View>
             )}
           </ScrollView>
@@ -913,6 +1022,17 @@ export default function UserDashboard({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#64748b',
+  },
   header: {
     paddingTop: 46,
     paddingHorizontal: 20,
@@ -933,7 +1053,6 @@ const styles = StyleSheet.create({
   locationText: { color: '#fff', fontSize: 12, marginHorizontal: 4, maxWidth: 140, opacity: 0.9 },
   headerIcons: { flexDirection: 'row', gap: 16 },
 
-  // Featured Carousel Styles
   featuredCarouselWrapper: { height: 240, marginTop: 12, marginBottom: 8 },
   featuredCard: {
     width: SCREEN_WIDTH - 32,
@@ -956,7 +1075,6 @@ const styles = StyleSheet.create({
   paginationWrapper: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 12 },
   paginationDot: { height: 6, borderRadius: 3, backgroundColor: '#2c5a73', marginHorizontal: 4 },
 
-  // Category Cards
   categoryContainer: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, marginVertical: 20 },
   categoryCard: { alignItems: 'center', width: (SCREEN_WIDTH - 48) / 4 },
   categoryIconContainer: {
@@ -976,20 +1094,17 @@ const styles = StyleSheet.create({
   categoryIcon: { width: 40, height: 40, resizeMode: 'contain' },
   categoryTitle: { fontSize: 12, fontWeight: '600', color: '#2c5a73', textAlign: 'center' },
 
-  // Section Styles
   section: { marginBottom: 24 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, marginBottom: 12 },
   sectionTitleContainer: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  sectionTitle: { fontSize: 18, fontWeight: '700', color: '#1e293b' },
+  sectionTitle: { fontSize: 21, fontWeight: '800', color: '#1e293b' },
   seeAllText: { fontSize: 14, color: '#2c5a73', fontWeight: '600' },
 
-  // Rating Stars
   ratingStarsContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 4, gap: 2 },
   ratingValue: { fontSize: 10, color: '#94a3b8', marginLeft: 4 },
 
-  // Top Place Card
   topPlaceCard: {
-    width: 140,
+    width: 130,
     backgroundColor: '#ffffff',
     borderRadius: 16,
     marginLeft: 16,
@@ -1000,17 +1115,17 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     overflow: 'hidden',
+    height: 163,
   },
-  topPlaceImageContainer: { width: '100%', height: 110, backgroundColor: '#ffffff', padding: '5%', borderColor: '#ebecee', borderWidth: 1 },
+  topPlaceImageContainer: { width: '100%', height: 100, backgroundColor: '#ffffff', padding: '5%', borderColor: '#ebecee', borderWidth: 1 },
   topPlaceImage: { width: '100%', height: '100%', borderRadius: 12 },
-  topPlaceInfo: { padding: 10, alignItems: 'center' },
-  topPlaceName: { fontSize: 14, fontWeight: '600', color: '#1e293b', marginBottom: 4, textAlign: 'center' },
-  topPlaceLocation: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginBottom: 4 },
+  topPlaceInfo: { padding: 3, alignItems: 'center' },
+  topPlaceName: { fontSize: 14, fontWeight: '600', color: '#1e293b', marginBottom: 2, textAlign: 'center' },
+  topPlaceLocation: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginBottom: 2 },
   topPlaceLocationText: { fontSize: 11, color: '#64748b', textAlign: 'center' },
 
-  // Top Guider/Photographer Card
   topGuiderCard: {
-    width: 140,
+    width: 130,
     backgroundColor: '#fff',
     borderRadius: 16,
     marginLeft: 16,
@@ -1022,23 +1137,21 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     overflow: 'hidden',
   },
-  topGuiderImageContainer: { width: '100%', height: 110, backgroundColor: '#ffffff', padding: '5%', borderColor: '#ebecee', borderWidth: 1 },
+  topGuiderImageContainer: { width: '100%', height: 100, backgroundColor: '#ffffff', padding: '5%', borderColor: '#ebecee', borderWidth: 1 },
   topGuiderImage: { width: '100%', height: '100%', borderRadius: 12 },
   topGuiderImagePlaceholder: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center', borderRadius: 12 },
   topGuiderInitial: { fontSize: 36, fontWeight: 'bold', color: '#fff' },
-  topGuiderInfo: { padding: 10, alignItems: 'center' },
-  topGuiderName: { fontSize: 14, fontWeight: '600', color: '#1e293b', marginBottom: 4, textAlign: 'center' },
-  topGuiderLocation: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginBottom: 4 },
+  topGuiderInfo: { padding: 3, alignItems: 'center' },
+  topGuiderName: { fontSize: 14, fontWeight: '600', color: '#1e293b', marginBottom: 2, textAlign: 'center' },
+  topGuiderLocation: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginBottom: 2 },
   topGuiderLocationText: { fontSize: 11, color: '#64748b', textAlign: 'center' },
-  topGuiderVerified: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 4 },
+  topGuiderVerified: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 2 },
   topGuiderVerifiedText: { fontSize: 10, color: '#10B981', fontWeight: '500', textAlign: 'center' },
 
-  // Placeholder Styles
   placeImagePlaceholder: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center', backgroundColor: '#f1f5f9', borderRadius: 12 },
   emptyCard: { width: 140, height: 180, marginLeft: 16, backgroundColor: '#f1f5f9', borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
   emptyText: { color: '#94a3b8', fontSize: 12, marginTop: 8, textAlign: 'center', paddingHorizontal: 10 },
 
-  // Like Button
   cardLikeButton: {
     position: 'absolute',
     top: 8,

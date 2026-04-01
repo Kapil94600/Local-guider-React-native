@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useRef } from "react";
+import React, { useState, useEffect, useContext } from "react";
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
   RefreshControl,
   FlatList,
   Modal,
-  Animated,
+  Dimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -20,6 +20,7 @@ import { LocationContext } from "../../context/LocationContext";
 import api from "../../api/apiClient";
 import { API } from "../../api/endpoints";
 
+const { width } = Dimensions.get("window");
 const BASE_URL = "https://localguider.sinfode.com";
 
 const getImageUrl = (path) => {
@@ -51,7 +52,7 @@ const RatingStars = ({ rating, size = 14 }) => {
   return <View style={styles.ratingStarsContainer}>{stars}</View>;
 };
 
-// Horizontal Review Card - Fixed layout
+// Horizontal Review Card
 const ReviewCard = ({ review }) => {
   const formatDate = (dateString) => {
     if (!dateString) return "";
@@ -89,7 +90,7 @@ const ReviewCard = ({ review }) => {
   );
 };
 
-// Horizontal Card for Professionals (square, image + name + rating)
+// Horizontal Card for Professionals (guiders/photographers)
 const HorizontalProfessionalCard = ({ item, type, onPress }) => {
   const imageUrl = item?.photograph || item?.featuredImage || item?.profileImage;
   const name = item?.firmName || item?.name || (type === "guider" ? "Tour Guide" : "Photographer");
@@ -115,67 +116,6 @@ const HorizontalProfessionalCard = ({ item, type, onPress }) => {
   );
 };
 
-// AnimatedProfessionalCard (kept for reference)
-const AnimatedProfessionalCard = ({ item, type, rank, onPress }) => {
-  const scaleValue = useRef(new Animated.Value(1)).current;
-
-  const handlePressIn = () => {
-    Animated.spring(scaleValue, {
-      toValue: 0.97,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const handlePressOut = () => {
-    Animated.spring(scaleValue, {
-      toValue: 1,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const imageUrl = item?.photograph || item?.featuredImage || item?.profileImage;
-  const name = item?.firmName || item?.name || (type === "guider" ? "Tour Guide" : "Photographer");
-  const location = item?.city || item?.state ;
-  const badge = item?.specialization || (type === "guider" ? "Tour Guide" : "Photographer");
-  const gradientColors =
-    type === "guider" ? ["#3B82F6", "#1E40AF"] : ["#8B5CF6", "#6D28D9"];
-
-  return (
-    <TouchableOpacity
-      activeOpacity={1}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      onPress={onPress}
-    >
-      <Animated.View style={[styles.personCard, { transform: [{ scale: scaleValue }] }]}>
-        <View style={styles.personRank}>
-          <Text style={styles.personRankText}>{rank}</Text>
-        </View>
-        <View style={styles.personImageContainer}>
-          {imageUrl ? (
-            <Image source={{ uri: getImageUrl(imageUrl) }} style={styles.personImage} />
-          ) : (
-            <LinearGradient colors={gradientColors} style={styles.personImagePlaceholder}>
-              <Text style={styles.personInitial}>{name.charAt(0).toUpperCase()}</Text>
-            </LinearGradient>
-          )}
-        </View>
-        <View style={styles.personInfo}>
-          <Text style={styles.personName} numberOfLines={1}>{name}</Text>
-          <View style={styles.personLocation}>
-            <Ionicons name="location-outline" size={12} color="#64748b" />
-            <Text style={styles.personLocationText} numberOfLines={1}>{location}</Text>
-          </View>
-          <RatingStars rating={item?.rating} size={12} />
-          <View style={styles.personBadge}>
-            <Text style={styles.personBadgeText}>{badge}</Text>
-          </View>
-        </View>
-      </Animated.View>
-    </TouchableOpacity>
-  );
-};
-
 export default function PlaceDetailsScreen({ route, navigation }) {
   const placeId = route?.params?.placeId;
   const { user } = useContext(AuthContext);
@@ -191,7 +131,40 @@ export default function PlaceDetailsScreen({ route, navigation }) {
   const [loadingPhotographers, setLoadingPhotographers] = useState(false);
   const [sortBy, setSortBy] = useState("recent");
   const [descExpanded, setDescExpanded] = useState(false);
-  const [imageModalVisible, setImageModalVisible] = useState(false);
+  const [galleryImages, setGalleryImages] = useState([]);
+  const [loadingGallery, setLoadingGallery] = useState(false);
+
+  // Full-screen image modal
+  const [fullScreenImageVisible, setFullScreenImageVisible] = useState(false);
+  const [selectedFullScreenImage, setSelectedFullScreenImage] = useState(null);
+
+  const totalReviews = reviews.length;
+
+  // Fetch gallery images for this place
+  const fetchGalleryImages = async () => {
+    try {
+      setLoadingGallery(true);
+      const formData = new URLSearchParams();
+      formData.append('placeId', placeId.toString());
+      formData.append('page', '1');
+      formData.append('perPage', '20');
+
+      const response = await api.post(API.ALL_IMAGES_BY_ID, formData.toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      });
+
+      if (response?.data?.status === true) {
+        setGalleryImages(response.data.data || []);
+      } else {
+        setGalleryImages([]);
+      }
+    } catch (error) {
+      console.log("Gallery API Error:", error.response?.data || error.message);
+      setGalleryImages([]);
+    } finally {
+      setLoadingGallery(false);
+    }
+  };
 
   useEffect(() => {
     if (!placeId) {
@@ -209,6 +182,7 @@ export default function PlaceDetailsScreen({ route, navigation }) {
       fetchReviews(),
       fetchGuiders(),
       fetchPhotographers(),
+      fetchGalleryImages(),
     ]);
   };
 
@@ -266,7 +240,6 @@ export default function PlaceDetailsScreen({ route, navigation }) {
   const fetchGuiders = async () => {
     try {
       setLoadingGuiders(true);
-
       const formData = new URLSearchParams();
       formData.append("latitude", location?.latitude);
       formData.append("longitude", location?.longitude);
@@ -341,28 +314,21 @@ export default function PlaceDetailsScreen({ route, navigation }) {
     setRefreshing(false);
   };
 
-  // Helper to format location: clean up extra parts
   const getLocationDisplay = () => {
     let city = place.city || "";
     let state = place.state || "";
+    if (city.includes(',')) city = city.split(',')[0].trim();
+    if (state.includes(',')) state = state.split(',')[0].trim();
+    if (city && state) return `${city}, ${state}`;
+    if (city) return city;
+    if (state) return state;
+    return "Jaipur";
+  };
 
-    // If city contains commas, take first part
-    if (city.includes(',')) {
-      city = city.split(',')[0].trim();
-    }
-    if (state.includes(',')) {
-      state = state.split(',')[0].trim();
-    }
-
-    if (city && state) {
-      return `${city}, ${state}`;
-    } else if (city) {
-      return city;
-    } else if (state) {
-      return state;
-    } else {
-      return "Jaipur"; // fallback
-    }
+  // Open full-screen image
+  const openFullScreenImage = (imageUrl) => {
+    setSelectedFullScreenImage(imageUrl);
+    setFullScreenImageVisible(true);
   };
 
   if (loading) {
@@ -404,11 +370,11 @@ export default function PlaceDetailsScreen({ route, navigation }) {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#2c5a73"]} />}
       >
-        {/* Place Card with Image and Text */}
+        {/* Place Card */}
         <View style={styles.rowContainer}>
           <TouchableOpacity
             activeOpacity={0.8}
-            onPress={() => setImageModalVisible(true)}
+            onPress={() => openFullScreenImage(getImageUrl(place.featuredImage))}
             style={styles.coverContainer}
           >
             {place.featuredImage ? (
@@ -427,16 +393,11 @@ export default function PlaceDetailsScreen({ route, navigation }) {
           <View style={styles.textContentContainer}>
             <Text style={styles.placeNameText}>{place.placeName}</Text>
             <View style={styles.infoRow}>
-              {/* <Ionicons name="time-outline" size={16} color="#4b5563" /> */}
-              {/* <Text style={styles.infoText}>Explores in: 02hr 23 min</Text> */}
-            </View>
-            <View style={styles.infoRow}>
               <Ionicons name="location-outline" size={16} color="#4b5563" />
               <Text style={styles.infoText}>{getLocationDisplay()}</Text>
             </View>
             <RatingStars rating={place.rating} size={16} />
 
-            {/* Description moved here, directly under rating */}
             <View style={styles.descriptionContainer}>
               <Text style={styles.descriptionText}>{getDisplayDescription()}</Text>
               {needsReadMore && (
@@ -448,11 +409,58 @@ export default function PlaceDetailsScreen({ route, navigation }) {
           </View>
         </View>
 
-        {/* Reviews Section - Horizontal Scroll */}
+        {/* Gallery Section - Directly below description */}
+        {galleryImages.length > 0 && (
+          <View style={styles.gallerySection}>
+            <Text style={styles.galleryTitle}>Photo Gallery</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.galleryScroll}
+            >
+              {galleryImages.map((img, idx) => (
+                <TouchableOpacity
+                  key={img.id || idx}
+                  onPress={() => openFullScreenImage(getImageUrl(img.image))}
+                >
+                  <Image
+                    source={{ uri: getImageUrl(img.image) }}
+                    style={styles.galleryImage}
+                  />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* Reviews Section */}
         <View style={styles.reviewsSection}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Reviews & Rating</Text>
-            <TouchableOpacity onPress={() => setSortBy(sortBy === "recent" ? "top" : "recent")} style={styles.sortButton}>
+            <View style={{ alignItems: 'flex-end' }}>
+              {totalReviews > 0 ? (
+                <>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Ionicons name="star" size={25} color="#FFD700" />
+                    <Text style={styles.ratingTop}>
+                      {" "}{place.rating?.toFixed(1) || '0'}
+                    </Text>
+                  </View>
+                  <Text style={styles.ratingBottom}>
+                    ({totalReviews} review{totalReviews !== 1 ? 's' : ''})
+                  </Text>
+                </>
+              ) : (
+                <Text style={styles.ratingSummaryTexta}>No reviews yet</Text>
+              )}
+            </View>
+          </View>
+
+          <View style={{ marginTop: 6 }}>
+            <TouchableOpacity
+              onPress={() => setSortBy(sortBy === "recent" ? "top" : "recent")}
+              style={styles.sortButton}
+            >
               <Text style={styles.sortButtonText}>
                 Sorted by {sortBy === "recent" ? "recent reviews" : "top rating"} ▼
               </Text>
@@ -476,54 +484,12 @@ export default function PlaceDetailsScreen({ route, navigation }) {
           )}
         </View>
 
-        {/* Top Guiders Section - Horizontal Square Cards */}
+        {/* Top Photographers Section */}
         <View style={styles.personsSection}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Top Guider</Text>
-            <TouchableOpacity style={styles.sortButton}>
-              <Text style={styles.sortButtonText}>Sorted by top rating ▼</Text>
-            </TouchableOpacity>
-          </View>
-
-          {loadingGuiders ? (
-            <View style={styles.loadingMoreContainer}>
-              <ActivityIndicator size="small" color="#2c5a73" />
-              <Text style={styles.loadingMoreText}>Loading guides...</Text>
-            </View>
-          ) : guiders.length > 0 ? (
-            <FlatList
-              data={guiders}
-              renderItem={({ item }) => (
-                <HorizontalProfessionalCard
-                  item={item}
-                  type="guider"
-                  onPress={() => navigation.navigate("ProfessionalDetails", {
-                    professionalId: item.id,
-                    professionalType: 'guider',
-                    placeId: place.id,
-                    placeName: place.placeName,
-                  })}
-                />
-              )}
-              keyExtractor={(item) => item.id.toString()}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalList}
-            />
-          ) : (
-            <View style={styles.emptyContainer}>
-              <Ionicons name="people-outline" size={40} color="#94a3b8" />
-              <Text style={styles.emptyText}>No guides available</Text>
-            </View>
-          )}
-        </View>
-
-        {/* Top Photographers Section - Horizontal Square Cards */}
-        <View style={styles.personsSection}>
-          <View style={styles.sectionHeader}>
+          <View style={styles.sectionHeadera}>
             <Text style={styles.sectionTitle}>Top Photographer</Text>
             <TouchableOpacity style={styles.sortButton}>
-              <Text style={styles.sortButtonText}>Sorted by top rating ▼</Text>
+              <Text style={styles.sortButtonTexta}>Sorted by top rating ▼</Text>
             </TouchableOpacity>
           </View>
 
@@ -560,20 +526,67 @@ export default function PlaceDetailsScreen({ route, navigation }) {
           )}
         </View>
 
+        {/* Top Guiders Section */}
+        <View style={styles.personsSection}>
+          <View style={styles.sectionHeadera}>
+            <Text style={styles.sectionTitle}>Top Guider</Text>
+            <TouchableOpacity style={styles.sortButton}>
+              <Text style={styles.sortButtonTexta}>Sorted by top rating ▼</Text>
+            </TouchableOpacity>
+          </View>
+
+          {loadingGuiders ? (
+            <View style={styles.loadingMoreContainer}>
+              <ActivityIndicator size="small" color="#2c5a73" />
+              <Text style={styles.loadingMoreText}>Loading guides...</Text>
+            </View>
+          ) : guiders.length > 0 ? (
+            <FlatList
+              data={guiders}
+              renderItem={({ item }) => (
+                <HorizontalProfessionalCard
+                  item={item}
+                  type="guider"
+                  onPress={() => navigation.navigate("ProfessionalDetails", {
+                    professionalId: item.id,
+                    professionalType: 'guider',
+                    placeId: place.id,
+                    placeName: place.placeName,
+                  })}
+                />
+              )}
+              keyExtractor={(item) => item.id.toString()}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.horizontalList}
+            />
+          ) : (
+            <View style={styles.emptyContainer}>
+              <Ionicons name="people-outline" size={40} color="#94a3b8" />
+              <Text style={styles.emptyText}>No guides available</Text>
+            </View>
+          )}
+        </View>
+
         <View style={{ height: 30 }} />
       </ScrollView>
 
-      {/* Full Screen Image Modal */}
-      <Modal visible={imageModalVisible} transparent={true} animationType="fade">
-        <View style={styles.modalContainer}>
-          <TouchableOpacity style={styles.modalClose} onPress={() => setImageModalVisible(false)}>
+      {/* Full‑screen image modal (for both featured and gallery) */}
+      <Modal visible={fullScreenImageVisible} transparent={true} animationType="fade">
+        <View style={styles.fullScreenModalContainer}>
+          <TouchableOpacity
+            style={styles.fullScreenClose}
+            onPress={() => setFullScreenImageVisible(false)}
+          >
             <Ionicons name="close" size={30} color="#fff" />
           </TouchableOpacity>
-          <Image
-            source={{ uri: getImageUrl(place.featuredImage) }}
-            style={styles.modalImage}
-            resizeMode="contain"
-          />
+          {selectedFullScreenImage && (
+            <Image
+              source={{ uri: selectedFullScreenImage }}
+              style={styles.fullScreenImage}
+              resizeMode="contain"
+            />
+          )}
         </View>
       </Modal>
     </View>
@@ -593,38 +606,41 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: 46, paddingHorizontal: 16, paddingBottom: 16 },
   backButton: { width: 40, height: 40, justifyContent: "center", alignItems: "center" },
   headerTitle: { flex: 1, fontSize: 18, fontWeight: "600", color: "#fff", textAlign: "center" },
-  
+
   // Place Card
   rowContainer: { flexDirection: "row", padding: 16, gap: 16 },
-  coverContainer: { width: 125, height: 125, borderRadius: 12, overflow: "hidden", borderWidth: 5, borderColor: "#ffffff", backgroundColor: "#fff", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 5, elevation: 5,
-    shadowColor: "#000",
-    shadowOffset: { width: 8, height: 2 },
-    shadowOpacity: 0.4,
-    
-    shadowRadius: 4, },
+  coverContainer: { width: 125, height: 125, borderRadius: 12, overflow: "hidden", borderWidth: 5, borderColor: "#ffffff", backgroundColor: "#fff", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 5, elevation: 5 },
   coverImage: { width: "100%", height: "100%" },
   coverPlaceholder: { width: "100%", height: "100%", justifyContent: "center", alignItems: "center" },
-  textContentContainer: { flex: 1, justifyContent: "center", alignContent: "center", alignItems: "center" },
+  textContentContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   placeNameText: { fontSize: 21, fontWeight: "700", color: "#2c5a73", marginBottom: 8 },
   infoRow: { flexDirection: "row", alignItems: "center", marginBottom: 6, gap: 8 },
   infoText: { fontSize: 12, color: "#63676d" },
   ratingStarsContainer: { flexDirection: "row", marginTop: 4, gap: 2 },
-  
-  // Description
+  ratingTop: { fontSize: 26, fontWeight: "bold", color: "#2c5a73", marginLeft: 1 },
+  ratingBottom: { fontSize: 12, color: "#777", marginLeft: 1 },
   descriptionContainer: { marginTop: 12 },
-  descriptionText: { fontSize: 11, color: "#63676d", lineHeight: 20,fontWeight: "500", textAlign: "center" },
+  descriptionText: { fontSize: 11, color: "#63676d", lineHeight: 20, fontWeight: "500", textAlign: "center" },
   readMoreButton: { marginTop: 4 },
   readMoreText: { fontSize: 14, color: "#2c5a73", fontWeight: "600" },
-  
-  // Sections
-  reviewsSection: { backgroundColor: "#fff", marginTop: 8, padding: 16 },
-  personsSection: { backgroundColor: "#fff", marginTop: 8, padding: 16 },
-  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
-  sectionTitle: { fontSize: 18, fontWeight: "700", color: "#1e293b" },
-  sortButton: { padding: 4 },
-  sortButtonText: { fontSize: 13, color: "#2c5a73", fontWeight: "500" },
-  
-  // Horizontal Review Card - adjusted height and layout
+
+  // Gallery Section (replaces the button)
+  gallerySection: { marginHorizontal: 16, marginTop: 8, marginBottom: 8 },
+  galleryTitle: { fontSize: 16, fontWeight: "600", color: "#1e293b", marginBottom: 8 },
+  galleryScroll: { paddingVertical: 4 },
+  galleryImage: { width: 100, height: 100, borderRadius: 8, marginRight: 8, backgroundColor: "#e2e8f0" },
+
+  // Reviews Section
+  reviewsSection: { backgroundColor: "#fff", marginTop: 4, padding: 16 },
+  personsSection: { backgroundColor: "#fff", marginTop: 0, padding: 16 },
+  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  sectionHeadera: { flexDirection: "column", alignItems: "flex-start" },
+  sectionTitle: { fontSize: 22, fontWeight: "700", color: "#2c5a73", marginTop: -1, marginBottom: 4 },
+  sortButton: { padding: 0 },
+  sortButtonText: { fontSize: 12, color: "#637985", fontWeight: "400", marginTop: -10, marginBottom: 18 },
+  sortButtonTexta: { fontSize: 12, color: "#637985", fontWeight: "400", marginTop: 0, marginBottom: 18 },
+
+  // Horizontal Review Card
   reviewsHorizontalList: { paddingRight: 16, gap: 12 },
   reviewCard: {
     width: 220,
@@ -649,13 +665,10 @@ const styles = StyleSheet.create({
   reviewerName: { fontSize: 13, fontWeight: "600", color: "#1e293b" },
   reviewText: { fontSize: 12, color: "#475569", lineHeight: 16, marginBottom: 6 },
   reviewDate: { fontSize: 10, color: "#94a3b8", alignSelf: "flex-end", marginTop: 2 },
-  
-  // Horizontal Professional Card (square)
-  horizontalList: { paddingRight: 16, gap: 12 },
+
+  // Horizontal Professional Card
   horizontalCard: {
-     borderWidth: 1,
-    borderColor: "#f6f6f6",
-    width: 140,
+    width: 130,
     backgroundColor: "#fff",
     borderRadius: 16,
     marginRight: 12,
@@ -667,39 +680,32 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
   },
   horizontalCardImageContainer: {
-    width: 120,
+    width: '115%',
     height: 100,
-    borderRadius: 12,
-    overflow: "hidden",
-    marginBottom: 8,
+    backgroundColor: '#ffffff',
+    padding: '5%',
+    borderColor: '#ebecee',
+    borderWidth: 1,
+    borderTopRightRadius: 16,
+    borderTopLeftRadius: 16,
+    marginTop: -9
   },
-  horizontalCardImage: { width: "100%", height: "100%" },
+  horizontalCardImage: { width: "100%", height: "100%", borderRadius: 12 },
   horizontalCardPlaceholder: { width: "100%", height: "100%", justifyContent: "center", alignItems: "center" },
   horizontalCardInitial: { fontSize: 40, fontWeight: "bold", color: "#fff" },
   horizontalCardName: { fontSize: 14, fontWeight: "600", color: "#1e293b", textAlign: "center", marginBottom: 4 },
-  
-  // (Optional) AnimatedProfessionalCard styles
-  personCard: { flexDirection: "row", backgroundColor: "#f8fafc", borderRadius: 12, padding: 12, marginBottom: 12, alignItems: "center" },
-  personRank: { width: 30, height: 30, borderRadius: 15, backgroundColor: "#2c5a73", justifyContent: "center", alignItems: "center", marginRight: 12 },
-  personRankText: { fontSize: 14, fontWeight: "bold", color: "#fff" },
-  personImageContainer: { width: 60, height: 60, borderRadius: 30, overflow: "hidden", marginRight: 12 },
-  personImage: { width: "100%", height: "100%" },
-  personImagePlaceholder: { width: "100%", height: "100%", justifyContent: "center", alignItems: "center" },
-  personInitial: { fontSize: 24, fontWeight: "bold", color: "#fff" },
-  personInfo: { flex: 1 },
-  personName: { fontSize: 15, fontWeight: "600", color: "#1e293b", marginBottom: 2 },
-  personLocation: { flexDirection: "row", alignItems: "center", marginBottom: 4 },
-  personLocationText: { fontSize: 12, color: "#64748b", marginLeft: 4 },
-  personBadge: { backgroundColor: "#e6f0f5", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12, alignSelf: "flex-start", marginTop: 4 },
-  personBadgeText: { fontSize: 10, color: "#2c5a73", fontWeight: "500" },
-  
+
+  // Empty state
   emptyContainer: { padding: 30, alignItems: "center" },
   emptyText: { fontSize: 14, color: "#94a3b8", marginTop: 8 },
-  
-  // Modal
-  modalContainer: { flex: 1, backgroundColor: "rgba(0,0,0,0.9)", justifyContent: "center", alignItems: "center" },
-  modalClose: { position: "absolute", top: 50, right: 20, zIndex: 10 },
-  modalImage: { width: "100%", height: "80%" },
+  ratingSummaryTexta: { fontSize: 12, color: "#2c5a73", fontWeight: "600" },
+
+  // Full‑screen image modal
+  fullScreenModalContainer: { flex: 1, backgroundColor: "rgba(0,0,0,0.95)", justifyContent: "center", alignItems: "center" },
+  fullScreenClose: { position: "absolute", top: 50, right: 20, zIndex: 10 },
+  fullScreenImage: { width: "100%", height: "80%", resizeMode: "contain" },
 });

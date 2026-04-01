@@ -47,6 +47,7 @@ export default function PhotographersListScreen({ navigation, route }) {
   const [selectedPhotographer, setSelectedPhotographer] = useState(null);
   const [expandedPhotographer, setExpandedPhotographer] = useState(null);
   const [photographerServices, setPhotographerServices] = useState({});
+  const [photographerGallery, setPhotographerGallery] = useState({}); // ✅ new state for gallery
   const [bookingModal, setBookingModal] = useState(false);
   const [selectedService, setSelectedService] = useState(null);
   const [bookingLoading, setBookingLoading] = useState(false);
@@ -61,6 +62,8 @@ export default function PhotographersListScreen({ navigation, route }) {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+  const [fullImageVisible, setFullImageVisible] = useState(false);
+  const [fullImageUrl, setFullImageUrl] = useState("");
 
   // Wallet-related state
   const [userBalance, setUserBalance] = useState(0);
@@ -141,6 +144,7 @@ export default function PhotographersListScreen({ navigation, route }) {
     setRefreshing(true);
     setPage(1);
     setPhotographerServices({});
+    setPhotographerGallery({});
     fetchPhotographers(1, false);
   };
 
@@ -152,6 +156,7 @@ export default function PhotographersListScreen({ navigation, route }) {
       setExpandedPhotographer(photographer.id);
       setSelectedPhotographer(photographer);
       fetchPhotographerServices(photographer.id);
+      fetchPhotographerGallery(photographer.id);
     }
   };
 
@@ -192,6 +197,28 @@ export default function PhotographersListScreen({ navigation, route }) {
         Alert.alert("Network Error", "Could not load services. Please check your internet connection.");
       }
       setPhotographerServices(prev => ({ ...prev, [photographerId]: [] }));
+    }
+  };
+
+  // ✅ Fetch gallery images for a photographer
+  const fetchPhotographerGallery = async (photographerId) => {
+    if (photographerGallery[photographerId]) return;
+    try {
+      const params = new URLSearchParams();
+      params.append("photographerId", photographerId.toString());
+      params.append("page", "1");
+      const response = await api.post(API.ALL_IMAGES_BY_ID, params.toString(), {
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      });
+      if (response.data?.status) {
+        const images = response.data.data || [];
+        setPhotographerGallery(prev => ({ ...prev, [photographerId]: images }));
+      } else {
+        setPhotographerGallery(prev => ({ ...prev, [photographerId]: [] }));
+      }
+    } catch (error) {
+      console.error("Error fetching photographer gallery:", error);
+      setPhotographerGallery(prev => ({ ...prev, [photographerId]: [] }));
     }
   };
 
@@ -245,9 +272,9 @@ export default function PhotographersListScreen({ navigation, route }) {
       <View style={styles.serviceHeader}>
         <View style={styles.serviceTitleContainer}>
           <Text style={styles.serviceTitle}>{service.title}</Text>
-          <View style={styles.serviceBadge}>
-            <Text style={styles.serviceDuration}>{service.duration || "2 hours"}</Text>
-          </View>
+          {/* <View style={styles.serviceBadge}> */}
+            {/* <Text style={styles.serviceDuration}></Text> */}
+          {/* </View> */}
         </View>
         <Text style={styles.servicePrice}>₹{service.price}</Text>
       </View>
@@ -273,10 +300,11 @@ export default function PhotographersListScreen({ navigation, route }) {
     </View>
   );
 
-  // Render each photographer card with LikeButton and expandable details
+  // Render each photographer card with LikeButton, gallery, and expandable details
   const renderPhotographerCard = ({ item }) => {
     const isExpanded = expandedPhotographer === item.id;
     const services = photographerServices[item.id] || [];
+    const galleryImages = photographerGallery[item.id] || [];
 
     return (
       <View style={styles.photographerCard}>
@@ -376,6 +404,31 @@ export default function PhotographersListScreen({ navigation, route }) {
                 )}
               </View>
             </View>
+
+            {/* ✅ Gallery Section (just like guider) */}
+            {galleryImages.length > 0 && (
+              <View style={styles.gallerySection}>
+                <Text style={styles.sectionTitle}>Photo Gallery</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.galleryScroll}
+                >
+                  {galleryImages.map((img, idx) => (
+                    <TouchableOpacity
+                      key={img.id || idx}
+                      onPress={() => openFullImage(getImageUrl(img.image))}
+                    >
+                      <Image
+                        source={{ uri: getImageUrl(img.image) }}
+                        style={styles.galleryImage}
+                      />
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+
             <View style={styles.servicesSection}>
               <Text style={styles.sectionTitle}>Photography Packages</Text>
               {services.length > 0 ? (
@@ -402,8 +455,36 @@ export default function PhotographersListScreen({ navigation, route }) {
     );
   };
 
-  // ----- Wallet & Payment Functions (identical to GuiderListScreen) -----
+  // ----- Full‑screen image viewer (shared with guider) -----
+  const openFullImage = (url) => {
+    setFullImageUrl(url);
+    setFullImageVisible(true);
+  };
 
+  const renderFullImageModal = () => (
+    <Modal
+      visible={fullImageVisible}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => setFullImageVisible(false)}
+    >
+      <View style={styles.fullImageContainer}>
+        <TouchableOpacity
+          style={styles.fullImageCloseBtn}
+          onPress={() => setFullImageVisible(false)}
+        >
+          <Ionicons name="close" size={30} color="#fff" />
+        </TouchableOpacity>
+        <Image
+          source={{ uri: fullImageUrl }}
+          style={styles.fullImage}
+          resizeMode="contain"
+        />
+      </View>
+    </Modal>
+  );
+
+  // ----- Wallet & Payment Functions (identical to GuiderListScreen) -----
   const fetchUserBalance = async () => {
     if (!user) return;
     try {
@@ -577,8 +658,7 @@ export default function PhotographersListScreen({ navigation, route }) {
     fetchUserBalance();
   };
 
-  // ----- Modal Rendering Functions -----
-
+  // ----- Modal Rendering Functions (same as before, no changes) -----
   const renderFilterModal = () => (
     <Modal visible={filterModal} transparent animationType="slide" onRequestClose={() => setFilterModal(false)}>
       <BlurView intensity={20} style={StyleSheet.absoluteFill} />
@@ -927,10 +1007,12 @@ export default function PhotographersListScreen({ navigation, route }) {
       {renderFilterModal()}
       {renderBookingModal()}
       {renderLoginPromptModal()}
+      {renderFullImageModal()}
     </View>
   );
 }
 
+// Styles – add gallery and full‑image styles (copy from GuiderListScreen)
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f8fafc" },
   header: { paddingTop: 46, paddingHorizontal: 16, paddingBottom: 16, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
@@ -970,6 +1052,9 @@ const styles = StyleSheet.create({
   expertiseTags: { flexDirection: "row", flexWrap: "wrap" },
   expertiseTag: { backgroundColor: "#dbeafe", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginRight: 8, marginBottom: 4 },
   expertiseText: { fontSize: 11, color: "#1e40af", fontWeight: "500" },
+  gallerySection: { marginBottom: 12 },
+  galleryScroll: { paddingVertical: 4 },
+  galleryImage: { width: 80, height: 80, borderRadius: 8, marginRight: 8, backgroundColor: "#e2e8f0" },
   servicesSection: { marginBottom: 12 },
   servicesList: { marginTop: 8 },
   serviceItem: { backgroundColor: "#f8fafc", borderRadius: 12, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: "#e2e8f0" },
@@ -1079,5 +1164,24 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
+  },
+  fullImageContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullImageCloseBtn: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    zIndex: 10,
+    padding: 10,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 30,
+  },
+  fullImage: {
+    width: '100%',
+    height: '80%',
   },
 });

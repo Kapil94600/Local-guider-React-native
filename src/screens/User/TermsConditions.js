@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   Modal,
   Alert,
+  Platform,
+  SafeAreaView
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -16,97 +18,76 @@ export default function TermsConditions({ navigation }) {
 
   const sections = [
     {
-      title: "1. Acceptance of Terms",
-      content: "By accessing or using TourEase, you agree to be bound by these Terms and Conditions. If you do not agree, please do not use our services.",
+      title: "1. शर्तों की स्वीकृति",
+      content: "Local Guider ऐप का उपयोग करने का अर्थ है कि आप यहाँ दिए गए सभी नियमों और कानूनों का पालन करने के लिए कानूनी रूप से बाध्य हैं। यदि आप इन शर्तों से सहमत नहीं हैं, तो कृपया हमारी सेवाओं का उपयोग न करें।",
     },
     {
-      title: "2. User Accounts",
-      content: "You must be at least 18 years old. You are responsible for maintaining account confidentiality and providing accurate information.",
+      title: "2. उपयोगकर्ता खाता (User Account)",
+      content: "• आपकी आयु कम से कम 18 वर्ष होनी चाहिए।\n• आप अपने अकाउंट की जानकारी और पासवर्ड को सुरक्षित रखने के लिए पूरी तरह जिम्मेदार हैं।\n• अकाउंट बनाते समय दी गई सभी जानकारी सटीक और सच होनी चाहिए।",
     },
     {
-      title: "3. Services",
-      content: "TourEase connects users with local tour guides and photographers. We facilitate bookings but don't provide services directly.",
+      title: "3. हमारी सेवाएँ",
+      content: "Local Guider एक प्लेटफॉर्म है जो यात्रियों (Travelers) को स्थानीय टूर गाइड और फोटोग्राफरों से जोड़ता है। हम केवल बुकिंग की सुविधा प्रदान करते हैं; हम सीधे तौर पर गाइड या फोटोग्राफी की सेवाएं स्वयं प्रदान नहीं करते।",
     },
     {
-      title: "4. Bookings and Payments",
-      content: "All bookings are subject to availability. Payments are processed securely through our payment gateway in Indian Rupees (INR).",
+      title: "4. बुकिंग और भुगतान",
+      content: "• सभी बुकिंग गाइड की उपलब्धता (Availability) के आधार पर तय की जाएंगी।\n• भुगतान सुरक्षित तरीके से भारतीय रुपये (INR) में लिया जाएगा।\n• बुकिंग के समय दिखाई गई राशि ही मान्य होगी।",
     },
     {
-      title: "5. Cancellation and Refunds",
-      content: "Cancellation policies vary by service provider. Please review specific policy before booking. Refunds processed as per provider's policy.",
+      title: "5. रद्दीकरण और रिफंड (Cancellation & Refund)",
+      content: "बुकिंग रद्द करने की नीतियां अलग-अलग सेवा प्रदाताओं (Guides) के अनुसार भिन्न हो सकती हैं। रिफंड की प्रक्रिया हमारे रिफंड नियमों के तहत की जाएगी। कृपया बुकिंग से पहले रिफंड पॉलिसी को ध्यान से पढ़ लें।",
     },
     {
-      title: "6. User Conduct",
-      content: "Use services responsibly. Harassment, abuse, or inappropriate behavior will result in account termination.",
+      title: "6. उपयोगकर्ता का आचरण",
+      content: "ऐप का उपयोग केवल वैध उद्देश्यों के लिए ही करें। किसी भी गाइड या फोटोग्राफर के साथ दुर्व्यवहार, अभद्र भाषा या गलत व्यवहार करने पर आपका अकाउंट तुरंत बंद कर दिया जाएगा।",
     },
     {
-      title: "7. Privacy Policy",
-      content: "Your privacy is important. Please review our Privacy Policy to understand how we collect and use your information.",
+      title: "7. गोपनीयता नीति (Privacy Policy)",
+      content: "आपकी गोपनीयता हमारे लिए अत्यंत महत्वपूर्ण है। हम आपकी जानकारी का उपयोग केवल सेवा को बेहतर बनाने और बुकिंग प्रक्रिया के लिए करते हैं। हम आपकी जानकारी किसी तीसरे पक्ष को नहीं बेचते।",
     },
     {
-      title: "8. Limitation of Liability",
-      content: "TourEase is not liable for any damages arising from service use. We don't guarantee accuracy of user-generated content.",
+      title: "8. जिम्मेदारी की सीमा",
+      content: "सेवा के दौरान होने वाले किसी भी आकस्मिक नुकसान, चोट या असंतोष के लिए Local Guider सीधे तौर पर जिम्मेदार नहीं होगा। हम यात्रियों और गाइडों के बीच एक सेतु (Bridge) के रूप में कार्य करते हैं।",
     },
     {
-      title: "9. Changes to Terms",
-      content: "We may modify these terms at any time. Continued use after changes constitutes acceptance.",
+      title: "9. नियमों में बदलाव",
+      content: "हम किसी भी समय इन नियमों और शर्तों को बदल सकते हैं। ऐप का उपयोग जारी रखने का मतलब होगा कि आप नए नियमों को स्वीकार करते हैं।",
     },
     {
-      title: "10. Governing Law",
-      content: "These terms are governed by the laws of India. Disputes subject to jurisdiction of courts in Mumbai.",
+      title: "10. कानूनी अधिकार क्षेत्र",
+      content: "ये शर्तें भारतीय कानूनों के अधीन हैं। किसी भी विवाद की स्थिति में न्यायिक कार्यक्षेत्र राजस्थान की अदालतें होंगी।",
     },
   ];
 
   const handleAccept = () => {
-    Alert.alert(
-      "Accept Terms",
-      "By accepting, you confirm that you have read and agree to all terms and conditions.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Accept",
-          onPress: () => {
-            setAcceptModalVisible(false);
-            Alert.alert("Success", "Thank you for accepting our terms");
-          },
-        },
-      ]
-    );
+    setAcceptModalVisible(false);
+    Alert.alert("सफलता", "नियमों को स्वीकार करने के लिए धन्यवाद।");
   };
 
   return (
-    <View style={styles.container}>
-      {/* Gradient Header */}
+    <SafeAreaView style={styles.container}>
+      {/* Header */}
       <LinearGradient
         colors={['#1e3c4f', '#2c5a73', '#3b7a8f']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
         style={styles.header}
       >
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Terms & Conditions</Text>
+        <Text style={styles.headerTitle}>नियम और शर्तें</Text>
         <View style={{ width: 40 }} />
       </LinearGradient>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Last Updated */}
-        <View style={styles.lastUpdated}>
-          <Ionicons name="time-outline" size={16} color="#2c5a73" />
-          <Text style={styles.lastUpdatedText}>Last Updated: January 15, 2024</Text>
-        </View>
-
-        {/* Introduction */}
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+        {/* Intro Card */}
         <View style={styles.introCard}>
-          <Text style={styles.introTitle}>Welcome to TourEase</Text>
+          <Text style={styles.introTitle}>Local Guider में आपका स्वागत है</Text>
           <Text style={styles.introText}>
-            Please read these terms and conditions carefully before using our platform.
-            By using TourEase, you agree to be bound by these terms.
+            कृपया हमारे प्लेटफॉर्म का उपयोग करने से पहले इन नियमों और शर्तों को ध्यान से पढ़ें। इस ऐप का उपयोग करके, आप इन शर्तों को मानने के लिए अपनी सहमति देते हैं।
           </Text>
         </View>
 
-        {/* Terms Sections */}
+        {/* Sections */}
         <View style={styles.sectionsCard}>
           {sections.map((section, index) => (
             <View key={index} style={styles.section}>
@@ -119,333 +100,109 @@ export default function TermsConditions({ navigation }) {
 
         {/* Important Notes */}
         <View style={styles.notesCard}>
-          <Text style={styles.notesTitle}>Important Notes:</Text>
-          
+          <Text style={styles.notesTitle}>महत्वपूर्ण सूचना:</Text>
           <View style={styles.noteItem}>
-            <Ionicons name="information-circle" size={16} color="#2c5a73" />
-            <Text style={styles.noteText}>
-              These terms constitute a legally binding agreement.
-            </Text>
+            <Ionicons name="shield-checkmark" size={16} color="#2c5a73" />
+            <Text style={styles.noteText}>यह एक कानूनी समझौता है।</Text>
           </View>
-          
           <View style={styles.noteItem}>
-            <Ionicons name="information-circle" size={16} color="#2c5a73" />
-            <Text style={styles.noteText}>
-              Save a copy of these terms for your records.
-            </Text>
+            <Ionicons name="phone-portrait-outline" size={16} color="#2c5a73" />
+            <Text style={styles.noteText}>भविष्य के संदर्भ के लिए आप इन शर्तों का स्क्रीनशॉट ले सकते हैं।</Text>
           </View>
-          
           <View style={styles.noteItem}>
-            <Ionicons name="information-circle" size={16} color="#2c5a73" />
-            <Text style={styles.noteText}>
-              Contact support if you have any questions.
-            </Text>
+            <Ionicons name="help-circle-outline" size={16} color="#2c5a73" />
+            <Text style={styles.noteText}>सहायता के लिए हमारे सहायता केंद्र से संपर्क करें।</Text>
           </View>
         </View>
 
-        {/* Contact Information */}
+        {/* Contact info */}
         <View style={styles.contactCard}>
-          <Text style={styles.contactTitle}>Contact Us</Text>
-          <Text style={styles.contactText}>
-            For questions about these terms, please contact:
-          </Text>
-          
-          <TouchableOpacity style={styles.contactItem}>
-            <Ionicons name="mail-outline" size={16} color="#2c5a73" />
-            <Text style={styles.contactLink}>legal@tourease.com</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.contactItem}>
-            <Ionicons name="call-outline" size={16} color="#2c5a73" />
-            <Text style={styles.contactLink}>+91 98765 43210</Text>
-          </TouchableOpacity>
+          <Text style={styles.contactTitle}>संपर्क करें</Text>
+          <View style={styles.contactItem}>
+            <Ionicons name="mail" size={18} color="#2c5a73" />
+            <Text style={styles.contactLink}>localguider07@gmail.com</Text>
+          </View>
+          <View style={styles.contactItem}>
+            <Ionicons name="call" size={18} color="#2c5a73" />
+            <Text style={styles.contactLink}>+91 957109700</Text>
+          </View>
         </View>
 
         {/* Accept Button */}
-        <View style={styles.acceptContainer}>
-          <TouchableOpacity 
-            style={styles.acceptButton}
-            onPress={() => setAcceptModalVisible(true)}
-          >
-            <Text style={styles.acceptButtonText}>I Accept the Terms</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity 
+          style={styles.mainAcceptBtn} 
+          onPress={() => setAcceptModalVisible(true)}
+        >
+          <Text style={styles.mainAcceptBtnText}>मैं शर्तों से सहमत हूँ</Text>
+        </TouchableOpacity>
       </ScrollView>
 
-      {/* Accept Modal */}
-      <Modal
-        visible={acceptModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setAcceptModalVisible(false)}
-      >
+      {/* Modal */}
+      <Modal visible={acceptModalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <View style={styles.modalIcon}>
-              <Ionicons name="document-text" size={50} color="#2c5a73" />
-            </View>
-            <Text style={styles.modalTitle}>Accept Terms & Conditions</Text>
+            <Ionicons name="document-text" size={50} color="#2c5a73" style={{ marginBottom: 15 }} />
+            <Text style={styles.modalTitle}>नियम और शर्तें स्वीकार करें</Text>
             <Text style={styles.modalText}>
-              By accepting, you confirm that you have read, understood, and agree to be bound by all the terms and conditions.
+              स्वीकार करके, आप पुष्टि करते हैं कि आपने सभी नियमों और शर्तों को पढ़ और समझ लिया है।
             </Text>
-            
             <View style={styles.modalButtons}>
               <TouchableOpacity 
-                style={[styles.modalButton, styles.modalCancelButton]}
+                style={[styles.modalBtn, { backgroundColor: '#f1f5f9' }]} 
                 onPress={() => setAcceptModalVisible(false)}
               >
-                <Text style={styles.modalCancelText}>Cancel</Text>
+                <Text style={{ color: '#64748b', fontWeight: '700' }}>रद्द करें</Text>
               </TouchableOpacity>
-              
               <TouchableOpacity 
-                style={[styles.modalButton, styles.modalAcceptButton]}
+                style={[styles.modalBtn, { backgroundColor: '#2c5a73' }]} 
                 onPress={handleAccept}
               >
-                <Text style={styles.modalAcceptText}>Accept</Text>
+                <Text style={{ color: '#fff', fontWeight: '700' }}>स्वीकार करें</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f8fafc",
-  },
+  container: { flex: 1, backgroundColor: "#f8fafc" },
   header: {
-    paddingTop: 50,
-    paddingBottom: 20,
+    paddingTop: Platform.OS === 'ios' ? 10 : 50,
+    paddingBottom: 25,
     paddingHorizontal: 20,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     borderBottomLeftRadius: 30,
     borderBottomRightRadius: 30,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
   },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "700",
-  },
-  lastUpdated: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#e6f0f5",
-    marginHorizontal: 16,
-    marginTop: 16,
-    padding: 12,
-    borderRadius: 10,
-    gap: 6,
-  },
-  lastUpdatedText: {
-    fontSize: 12,
-    color: "#2c5a73",
-    fontWeight: "500",
-  },
-  introCard: {
-    backgroundColor: "#fff",
-    marginHorizontal: 16,
-    marginTop: 16,
-    padding: 20,
-    borderRadius: 16,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-  },
-  introTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#1e293b",
-    marginBottom: 8,
-  },
-  introText: {
-    fontSize: 14,
-    color: "#64748b",
-    lineHeight: 20,
-  },
-  sectionsCard: {
-    backgroundColor: "#fff",
-    marginHorizontal: 16,
-    marginTop: 16,
-    padding: 20,
-    borderRadius: 16,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-  },
-  section: {
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#1e293b",
-    marginBottom: 6,
-  },
-  sectionContent: {
-    fontSize: 13,
-    color: "#64748b",
-    lineHeight: 18,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: "#e2e8f0",
-    marginTop: 16,
-  },
-  notesCard: {
-    backgroundColor: "#e6f0f5",
-    marginHorizontal: 16,
-    marginTop: 16,
-    padding: 20,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#b8d4e3",
-  },
-  notesTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#2c5a73",
-    marginBottom: 12,
-  },
-  noteItem: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    marginBottom: 8,
-    gap: 8,
-  },
-  noteText: {
-    flex: 1,
-    fontSize: 13,
-    color: "#1e293b",
-    lineHeight: 18,
-  },
-  contactCard: {
-    backgroundColor: "#fff",
-    marginHorizontal: 16,
-    marginTop: 16,
-    padding: 20,
-    borderRadius: 16,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-  },
-  contactTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#1e293b",
-    marginBottom: 8,
-  },
-  contactText: {
-    fontSize: 13,
-    color: "#64748b",
-    marginBottom: 12,
-  },
-  contactItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 8,
-    gap: 8,
-  },
-  contactLink: {
-    fontSize: 13,
-    color: "#2c5a73",
-    textDecorationLine: "underline",
-  },
-  acceptContainer: {
-    alignItems: "center",
-    marginVertical: 24,
-    paddingHorizontal: 16,
-  },
-  acceptButton: {
-    backgroundColor: "#2c5a73",
-    paddingHorizontal: 32,
-    paddingVertical: 14,
-    borderRadius: 25,
-  },
-  acceptButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  modalContent: {
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 24,
-    width: "85%",
-    maxWidth: 320,
-    alignItems: "center",
-  },
-  modalIcon: {
-    marginBottom: 16,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#1e293b",
-    marginBottom: 8,
-  },
-  modalText: {
-    fontSize: 14,
-    color: "#64748b",
-    textAlign: "center",
-    marginBottom: 24,
-    lineHeight: 20,
-  },
-  modalButtons: {
-    flexDirection: "row",
-    gap: 12,
-    width: "100%",
-  },
-  modalButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  modalCancelButton: {
-    backgroundColor: "#f1f5f9",
-  },
-  modalAcceptButton: {
-    backgroundColor: "#2c5a73",
-  },
-  modalCancelText: {
-    color: "#64748b",
-    fontWeight: "600",
-    fontSize: 14,
-  },
-  modalAcceptText: {
-    color: "#fff",
-    fontWeight: "600",
-    fontSize: 14,
-  },
+  backButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
+  headerTitle: { color: "#fff", fontSize: 18, fontWeight: "700" },
+  introCard: { backgroundColor: "#fff", margin: 16, padding: 20, borderRadius: 16, elevation: 2 },
+  introTitle: { fontSize: 18, fontWeight: "700", color: "#1e293b", marginBottom: 10 },
+  introText: { fontSize: 14, color: "#64748b", lineHeight: 22 },
+  sectionsCard: { backgroundColor: "#fff", marginHorizontal: 16, padding: 20, borderRadius: 16, elevation: 2 },
+  section: { marginBottom: 15 },
+  sectionTitle: { fontSize: 16, fontWeight: "700", color: "#1e293b", marginBottom: 8 },
+  sectionContent: { fontSize: 14, color: "#475569", lineHeight: 22 },
+  divider: { height: 1, backgroundColor: "#f1f5f9", marginTop: 15 },
+  notesCard: { backgroundColor: "#e6f0f5", margin: 16, padding: 20, borderRadius: 16, borderWidth: 1, borderColor: "#b8d4e3" },
+  notesTitle: { fontSize: 16, fontWeight: "700", color: "#2c5a73", marginBottom: 12 },
+  noteItem: { flexDirection: "row", alignItems: "center", marginBottom: 10, gap: 10 },
+  noteText: { flex: 1, fontSize: 13, color: "#1e293b", fontWeight: '500' },
+  contactCard: { backgroundColor: "#fff", marginHorizontal: 16, padding: 20, borderRadius: 16, elevation: 2 },
+  contactTitle: { fontSize: 16, fontWeight: "700", color: "#1e293b", marginBottom: 15 },
+  contactItem: { flexDirection: "row", alignItems: "center", marginBottom: 12, gap: 12 },
+  contactLink: { fontSize: 14, color: "#2c5a73", fontWeight: "600" },
+  mainAcceptBtn: { backgroundColor: "#2c5a73", margin: 20, padding: 16, borderRadius: 30, alignItems: 'center', elevation: 3 },
+  mainAcceptBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center", padding: 20 },
+  modalContent: { backgroundColor: "#fff", borderRadius: 20, padding: 25, width: "90%", alignItems: "center" },
+  modalTitle: { fontSize: 18, fontWeight: "700", color: "#1e293b", marginBottom: 10 },
+  modalText: { fontSize: 14, color: "#64748b", textAlign: "center", marginBottom: 25, lineHeight: 20 },
+  modalButtons: { flexDirection: "row", gap: 10, width: "100%" },
+  modalBtn: { flex: 1, padding: 14, borderRadius: 12, alignItems: "center" }
 });

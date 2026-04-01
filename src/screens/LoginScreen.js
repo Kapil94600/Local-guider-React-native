@@ -13,17 +13,13 @@ import {
   Modal,
   Image,
 } from "react-native";
+import { WebView } from "react-native-webview";
 import { IS_ADMIN_APP } from "../appMode";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AuthContext } from "../context/AuthContext";
 import api from "../api/apiClient";
 import { Ionicons } from "@expo/vector-icons";
-
-// Firebase OTP imports
-import { FirebaseRecaptchaVerifierModal } from "expo-firebase-recaptcha";
-import { signInWithPhoneNumber } from "firebase/auth";
-import { auth, firebaseConfig } from "../firebaseConfig";
 
 export default function LoginScreen({ navigation }) {
   const { login } = useContext(AuthContext);
@@ -43,17 +39,47 @@ export default function LoginScreen({ navigation }) {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [forgetLoading, setForgetLoading] = useState(false);
 
-  // OTP states
+  // OTP states (for WebView flow)
   const [otp, setOtp] = useState("");
-  const [confirmation, setConfirmation] = useState(null);
   const [resetStep, setResetStep] = useState("phone"); // 'phone', 'otp', 'password'
 
-  const recaptchaVerifier = useRef(null);
+  // WebView ref and ready state
+  const webViewRef = useRef(null);
+  const [webViewReady, setWebViewReady] = useState(false);
 
   // ✅ Phone validation (10 digits)
-  const validatePhone = (number) => {
-    const phoneRegex = /^[0-9]{10}$/;
-    return phoneRegex.test(number);
+  const validatePhone = (number) => /^[0-9]{10}$/.test(number);
+
+  // ✅ Handle messages from WebView
+  const onMessage = (event) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      console.log("WebView message:", data);
+
+      switch (data.type) {
+        case "WEBVIEW_READY":
+          setWebViewReady(true);
+          break;
+        case "OTP_SENT":
+          setResetStep("otp");
+          Alert.alert("OTP Sent", "Verification code sent successfully");
+          break;
+        case "VERIFIED":
+          setResetStep("password");
+          Alert.alert("Success", "Phone number verified");
+          break;
+        case "INVALID":
+          Alert.alert("Invalid OTP", "Please check the code and try again");
+          break;
+        case "ERROR":
+          Alert.alert("Error", data.message);
+          break;
+        default:
+          break;
+      }
+    } catch (err) {
+      console.log("Invalid message from WebView", err);
+    }
   };
 
   // ✅ Main login handler
@@ -83,23 +109,15 @@ export default function LoginScreen({ navigation }) {
           await AsyncStorage.setItem("userId", userId.toString());
         }
 
-      // ✅ ROLE CHECK (FINAL)
-if (userData.photographerId || userData.photographer) {
-
-  login({ ...userData, role: "photographer", token });
-
-} 
-else if (userData.guiderId || userData.guider) {
-
-  login({ ...userData, role: "guider", token });
-
-} 
-else {
-
-  login({ ...userData, role: "user", token });
-
-}
-      } else {  
+        // ✅ ROLE CHECK (FINAL)
+        if (userData.photographerId || userData.photographer) {
+          login({ ...userData, role: "photographer", token });
+        } else if (userData.guiderId || userData.guider) {
+          login({ ...userData, role: "guider", token });
+        } else {
+          login({ ...userData, role: "user", token });
+        }
+      } else {
         Alert.alert("Error", res.data.message || "Login failed");
       }
     } catch (err) {
@@ -109,48 +127,32 @@ else {
     }
   };
 
-  // ✅ OTP Sending
-  const sendOtp = async () => {
+  // ✅ Send OTP via WebView
+  const sendOtp = () => {
+    if (!webViewReady) {
+      Alert.alert("Error", "OTP service not ready. Please try again.");
+      return;
+    }
     if (!validatePhone(forgetPhone)) {
       Alert.alert("Error", "Please enter a valid 10-digit phone number");
       return;
     }
 
-    try {
-      setForgetLoading(true);
-      const phoneNumber = "+91" + forgetPhone; // adjust country code as needed
-      const confirmationResult = await signInWithPhoneNumber(
-        auth,
-        phoneNumber,
-        recaptchaVerifier.current
-      );
-      setConfirmation(confirmationResult);
-      setResetStep("otp");
-      Alert.alert("OTP Sent", "Verification code sent successfully");
-    } catch (error) {
-      Alert.alert("Error", error.message);
-    } finally {
-      setForgetLoading(false);
-    }
+    const phoneNumber = "+91" + forgetPhone; // यहाँ देश कोड अपने अनुसार बदलें
+    webViewRef.current.injectJavaScript(`
+      window.sendOTP('${phoneNumber}');
+    `);
   };
 
-  // ✅ OTP Verification
-  const verifyOtp = async () => {
+  // ✅ Verify OTP via WebView
+  const verifyOtp = () => {
     if (!otp || otp.length < 6) {
       Alert.alert("Error", "Please enter a valid 6-digit OTP");
       return;
     }
-
-    try {
-      setForgetLoading(true);
-      await confirmation.confirm(otp);
-      Alert.alert("Success", "Phone number verified");
-      setResetStep("password");
-    } catch {
-      Alert.alert("Invalid OTP", "Please check the code and try again");
-    } finally {
-      setForgetLoading(false);
-    }
+    webViewRef.current.injectJavaScript(`
+      window.verifyOTP('${otp}');
+    `);
   };
 
   // ✅ Password Reset API call
@@ -206,7 +208,6 @@ else {
     setNewPassword("");
     setConfirmPassword("");
     setOtp("");
-    setConfirmation(null);
     setResetStep("phone");
   };
 
@@ -380,16 +381,21 @@ else {
       end={{ x: 1, y: 1 }}
       style={styles.container}
     >
-      {/* reCAPTCHA modal must be placed inside the view but outside the main modal */}
-      <FirebaseRecaptchaVerifierModal
-        ref={recaptchaVerifier}
-        firebaseConfig={firebaseConfig}
+      {/* Invisible WebView for Firebase OTP */}
+      <WebView
+        ref={webViewRef}
+        source={{ uri: "https://your-domain.com/firebase-otp.html" }} // ✅ अपना होस्टेड URL यहाँ डालें
+        style={{ height: 0, width: 0, opacity: 0 }}
+        onMessage={onMessage}
+        onLoad={() => console.log("WebView loaded")}
+        javaScriptEnabled={true}
+        domStorageEnabled={true}
       />
+<KeyboardAvoidingView
+  behavior={Platform.OS === "ios" ? "padding" : undefined}
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={styles.container}
-      >
+  keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 25}
+>
         <ScrollView
           contentContainerStyle={styles.scrollContainer}
           showsVerticalScrollIndicator={false}
@@ -538,26 +544,28 @@ else {
   );
 }
 
+// Styles (same as before, no changes needed)
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  scrollContainer: {
-    flexGrow: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingVertical: 20,
-  },
+ 
+scrollContainer: {
+  flexGrow: 1,
+  alignItems: "center",
+  justifyContent: Platform.OS === "web" ? "center" : "flex-start",
+  paddingTop: Platform.OS === "web" ? 80 : 40,
+  paddingBottom: 260,
+  marginTop:100
+
+},
   card: {
-    width: "90%",
-    maxWidth: 400,
-    backgroundColor: "#fff",
-    borderRadius: 24,
-    padding: 25,
-    elevation: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-  },
+  width: "90%",
+  maxWidth: 400,
+  backgroundColor: "#fff",
+  borderRadius: 24,
+  padding: 25,
+  elevation: 12,
+  marginBottom: 20, // clean spacing
+},
+
   iconContainer: { alignItems: "center", marginBottom: 15 },
   iconBackground: {
     width: 90,
